@@ -29,6 +29,8 @@
 #include "board_f411.h"
 #include "protocol.h"
 #include "stm32f4xx.h"
+#include "foc_trajectory.h"
+#include "drive.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -40,12 +42,13 @@
  * =============================================================================*/
 
 volatile uint32_t cnt_data      = 0;
-volatile uint32_t cnt_error     = 0;
+volatile uint32_t cnt_error     = 0;   /* also counts MOVE_CMD CRC failures */
 volatile uint32_t cnt_telem     = 0;
 volatile uint32_t cnt_block_hdr = 0;
 volatile uint32_t cnt_cs        = 0;
 volatile uint32_t cnt_tx_rearm  = 0;
 volatile uint32_t cnt_dma_stall = 0;
+volatile uint32_t cnt_move_cmd  = 0;
 
 volatile uint8_t ready_asserted = 0;
 
@@ -59,7 +62,18 @@ volatile uint16_t expected_samples = 0;
  * SPI DMA buffers
  * =============================================================================*/
 
-static volatile uint8_t spi2_rx_buf[SPI2_TRANSACTION_BYTES];
+/*
+ * Double-buffered (DMA DBM) RX -- fixes the single-buffer race the original
+ * design had: with one buffer, the DMA can start overwriting spi2_rx_buf
+ * with the *next* transaction while DMA1_Stream3_IRQHandler (or anything it
+ * calls) is still reading the frame that just completed, tearing it mid-
+ * read with no way to detect the tear (unlike the TX side, torn RX bytes
+ * aren't self-describing until the whole frame -- including its CRC -- has
+ * been read). DBM lets DMA fill the *other* buffer while software reads the
+ * one that just completed; CT (current-target) tells the IRQ which buffer
+ * that is (see DMA1_Stream3_IRQHandler below).
+ */
+static volatile uint8_t spi2_rx_buf[2][SPI2_TRANSACTION_BYTES];
 
 /*
  * Single live TX buffer -- see file header. CIRC DMA reads it
@@ -227,16 +241,21 @@ void spi_init(void)
                             0x1234, 0);
 
     /*
-     * RX DMA: Pi MOSI -> SPI2->DR -> spi2_rx_buf
-     * CIRC — just counts transactions.
+     * RX DMA: Pi MOSI -> SPI2->DR -> spi2_rx_buf[0/1]
+     * CIRC + DBM (double buffer mode) — see spi2_rx_buf's comment. DMA
+     * fills M0AR first (CT starts at 0), then ping-pongs to M1AR and back
+     * automatically at each transfer complete; software never touches
+     * M0AR/M1AR again after this setup.
      */
     DMA1_Stream3->PAR  = (uint32_t)&SPI2->DR;
-    DMA1_Stream3->M0AR = (uint32_t)spi2_rx_buf;
+    DMA1_Stream3->M0AR = (uint32_t)spi2_rx_buf[0];
+    DMA1_Stream3->M1AR = (uint32_t)spi2_rx_buf[1];
     DMA1_Stream3->NDTR = SPI2_TRANSACTION_BYTES;
     DMA1_Stream3->CR   =
         (0u << DMA_SxCR_CHSEL_Pos) |
         DMA_SxCR_MINC              |
         DMA_SxCR_CIRC              |
+        DMA_SxCR_DBM               |
         DMA_SxCR_TCIE;
 
     DMA1_Stream3->CR |= DMA_SxCR_EN;
@@ -316,6 +335,32 @@ void DMA1_Stream3_IRQHandler(void)
                   DMA_LIFCR_CFEIF3;
 
     cnt_telem++;
+
+    // CT already reflects the buffer DMA just switched *to* (i.e. the one
+    // it's about to fill next) -- hardware flips it right at this transfer-
+    // complete event, before this IRQ runs. So the frame that just finished
+    // filling is the *other* buffer, safe to read now: DMA won't touch it
+    // again until the next full ping-pong cycle.
+    uint32_t ct           = (DMA1_Stream3->CR & DMA_SxCR_CT) ? 1u : 0u;
+    uint32_t completed_idx = 1u - ct;
+    const uint8_t *frame  = (const uint8_t *)spi2_rx_buf[completed_idx];
+
+    if (frame[0] == SPI2_OP_MOVE_CMD)
+    {
+        if (crc16_valid((const TrajSlot *)frame, MOVE_CMD_CRC_LEN))
+        {
+            const MoveCmd *cmd = (const MoveCmd *)frame;
+            foc_trajectory_start_move(cmd->target_pos, cmd->vel_max, cmd->accel_max);
+            drive_request_servo_on();
+            cnt_move_cmd++;
+        }
+        else
+        {
+            // Corrupted MOVE_CMD -- fails its own CRC, no move started.
+            // Safe by construction: the drive stays wherever it was.
+            cnt_error++;
+        }
+    }
 }
 
 

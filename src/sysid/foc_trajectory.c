@@ -219,6 +219,18 @@ void foc_trajectory_start_move(int32_t target_pos, int32_t vel_max, int32_t acce
 }
 
 // =============================================================================
+// foc_trajectory_move_active — see header. g_move_pending covers the window
+// between a MOVE_CMD arriving and foc_trajectory_position_tick() actually
+// starting the generator (e.g. a command received during ALIGN); trap_gen_
+// active(&g_move) covers the generator's own run.
+// =============================================================================
+
+bool foc_trajectory_move_active(void)
+{
+    return g_move_pending || trap_gen_active(&g_move);
+}
+
+// =============================================================================
 // foc_trajectory_position_tick — call from SysTick at 1 kHz, SERVO_ON only
 //
 // M2: real trapezoidal generator (trap_gen.c), replacing M1's fake ramp
