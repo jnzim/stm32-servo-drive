@@ -21,11 +21,13 @@
 #include "current_feedback.h"
 #include "pwm.h"
 #include "loops.h"
-#include "spi.h"   // M1 diagnostic telemetry only -- spi_sysid_update_latest()
-#include "drive.h" // M1 diagnostic telemetry only -- drive_is_servo_on()
+#include "trap_gen.h"
+#include "spi.h"   // M1/M2 diagnostic telemetry only -- spi_sysid_update_latest()
+#include "drive.h" // M1/M2 diagnostic telemetry only -- drive_is_servo_on()
 
 #include <math.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 // =============================================================================
 // Alignment stage
@@ -41,10 +43,22 @@ static TrajStage traj_stage      = TRAJ_STAGE_ALIGN;
 static uint32_t  traj_align_tick = 0;
 static int32_t   traj_enc_offset = 0;
 
-// M1 fake trajectory state -- declared here (not just above
-// foc_trajectory_position_tick()) so the M1 diagnostic telemetry block in
-// foc_trajectory_step() can read it too. Goes away in M2.
-static float fake_traj_pos_cmd_rad = 0.0f;
+// M2: the real trapezoidal move generator (replaces M1's fake ramp).
+// g_move_pending latches a move requested before RUN begins (e.g. a
+// MOVE_CMD arriving during ALIGN) so it isn't lost -- foc_trajectory_
+// position_tick() starts the generator for real once traj_stage reaches
+// RUN and a pending move exists.
+static TrapGen g_move;
+static bool    g_move_pending      = false;
+static int32_t g_move_target       = 0;
+static int32_t g_move_vel_max      = 0;
+static int32_t g_move_accel_max    = 0;
+
+// Last generator output -- written by foc_trajectory_position_tick()
+// (SysTick, 1kHz), read by the diagnostic telemetry block in
+// foc_trajectory_step() (TIM1, 20kHz) without re-advancing the generator.
+static int32_t g_last_pos_cmd_counts   = 0;
+static float   g_last_vel_cmd_counts_s = 0.0f;
 
 // =============================================================================
 // Applied voltage — written each ISR, exposed for telemetry in SysTick
@@ -141,27 +155,31 @@ void foc_trajectory_step(void)
                                      DT_CURRENT);
             pwm_apply_dq(foc_vd_applied, foc_vq_applied, theta);
 
-            // ── M1 diagnostic telemetry -- TEMPORARY, remove once M1 is
-            // fully verified. Confirmed clean (no runaway) on the last
-            // capture; this is now just tracking/logging visibility.
-            // Reuses the proven free-running SysIdSample TX path (works
-            // regardless of RUN_MODE) at full 20kHz resolution. Units
-            // chosen so nothing clips int16 even during a large transient:
-            // position/theta in mrad, velocity in centirad/s (0.01 rad/s
-            // -- ±327 rad/s headroom), current in mA. The "test over"
-            // (flags=2) signal is sent above, before first_sample_ready
-            // gates this block -- diag_flags here is always traj_stage
-            // (0/1) since we only reach this while servo_on is true.
+            // ── M1/M2 diagnostic telemetry -- TEMPORARY, remove once M2 is
+            // fully verified. Reuses the proven free-running SysIdSample TX
+            // path (works regardless of RUN_MODE) at full 20kHz resolution.
+            // Units chosen so nothing clips int16 even during a large
+            // transient: position/theta in mrad, velocity in centirad/s
+            // (0.01 rad/s -- ±327 rad/s headroom), current in mA. The
+            // "test over" (flags=2) signal is sent above, before
+            // first_sample_ready gates this block -- diag_flags here is
+            // always traj_stage (0/1) since we only reach this while
+            // servo_on is true. pos_cmd/vel_cmd read the generator's last
+            // output (g_last_*, written by foc_trajectory_position_tick())
+            // rather than re-stepping it -- stepping here too would
+            // silently double-advance elapsed time.
             {
                 int32_t raw_diag          = encoder_get_position() - traj_enc_offset;
                 float   pos_meas_rad_diag = (float)raw_diag * (FOC_TWO_PI / ENCODER_CPR);
                 float   vel_fbk_rad_diag  = (float)encoder_get_velocity() / COUNTS_PER_RAD;
+                float   pos_cmd_rad_diag  = (float)g_last_pos_cmd_counts / COUNTS_PER_RAD;
+                float   gen_vel_rad_diag  = g_last_vel_cmd_counts_s / COUNTS_PER_RAD;
                 uint16_t diag_flags       = (uint16_t)traj_stage;
 
                 spi_sysid_update_latest(
-                    (int16_t)(fake_traj_pos_cmd_rad * 1000.0f),  /* ia_mA slot: pos_cmd [mrad] */
+                    (int16_t)(pos_cmd_rad_diag       * 1000.0f), /* ia_mA slot: pos_cmd [mrad] */
                     (int16_t)(pos_meas_rad_diag      * 1000.0f), /* ib_mA slot: pos_meas [mrad] */
-                    (int16_t)(vel_cmd_rad_sec        *  100.0f), /* ic_mA slot: vel_cmd [0.01 rad/s] */
+                    (int16_t)(gen_vel_rad_diag       *  100.0f), /* ic_mA slot: generator vel [0.01 rad/s] */
                     (int16_t)(vel_fbk_rad_diag       *  100.0f), /* id_mA slot: vel_fbk [0.01 rad/s] */
                     (int16_t)(iq_cmd                 * 1000.0f), /* iq_mA slot: iq_cmd [mA] */
                     (int16_t)(i_q_meas               * 1000.0f), /* vd_mV slot: i_q_meas [mA] */
@@ -169,7 +187,7 @@ void foc_trajectory_step(void)
                     (int16_t)(theta                  * 1000.0f), /* theta_mrad slot */
                     0u, 0u, 0u,
                     diag_flags,
-                    99u                     /* test_id: M1 diagnostic marker */
+                    98u                     /* test_id: M2 diagnostic marker */
                 );
             }
         }
@@ -178,60 +196,71 @@ void foc_trajectory_step(void)
 }
 
 // =============================================================================
-// foc_trajectory_position_tick — call from SysTick at 1 kHz, SERVO_ON only
+// foc_trajectory_start_move — request a move. Safe to call from any
+// context/priority (SPI RX ISR is the intended caller once M2's opcode
+// parsing is wired up) -- just captures the current position and latches
+// the request; foc_trajectory_position_tick() (SysTick, strictly lower
+// priority than the RX ISR) actually starts the generator, so there's no
+// torn-read risk between the two even without extra locking (a
+// higher-priority ISR always runs to completion before a lower one
+// resumes on Cortex-M).
 //
-// M1 (trajectory-streaming plan): fake hardcoded ramp+hold trajectory, no
-// ring buffer yet -- proves the position-loop-in-SysTick plumbing in
-// isolation before the real transport (ring buffer, then SPI RX) is
-// trusted. Target/rate deliberately small and slow -- comparable to
-// SYSID_TEST_POSITION_STEP's own amplitude (POSITION_STEP_AMPLITUDE_RAD),
-// not exploring new dynamic territory while also exercising brand-new code.
-//
-// Gated on traj_stage == TRAJ_STAGE_RUN, not just drive_is_servo_on(): the
-// M1 scaffolding in main.c requests SERVO_ON immediately at boot, but
-// foc_trajectory_step()'s own ALIGN stage still holds for ALIGN_TICKS
-// (100000 @ 20kHz = 5s) before traj_enc_offset is captured and the
-// current/velocity loop actually goes live. Without this gate the ramp
-// would fully complete (200ms) and sit at its target for the rest of that
-// 5s dead period, so real tracking would start with a full-scale step
-// instead of a gentle ramp the instant RUN begins -- caught before ever
-// flashing this.
-//
-// Replaced by a real ring_pop() in M2 -- this function's fake-trajectory
-// state (fake_traj_pos_cmd_rad) goes away then, the p_step/clamp/
-// vel_cmd_rad_sec idiom below stays (same pattern as foc_sysid.c's
-// run_position_step(), just fed from a different source).
+// target_pos/vel_max/accel_max are all in the same "counts relative to
+// traj_enc_offset" frame the position loop already uses -- NOT raw
+// encoder_get_position() counts.
 // =============================================================================
 
-#define FAKE_TRAJ_TARGET_RAD     3.0f  // ~172 deg -- bumped from 1.0 (matched
-                                        // POSITION_STEP_AMPLITUDE_RAD) so the
-                                        // move is actually visible on the
-                                        // bench; still under a full turn,
-                                        // still well inside what's already
-                                        // been run tonight (POSITION_STEP
-                                        // amplitude has been as high as
-                                        // 10.0f rad earlier this session)
-#define FAKE_TRAJ_RATE_RAD_S     5.0f  // ramp rate -- well under POSITION_VEL_LIMIT
-#define FAKE_TRAJ_RATE_PER_TICK  (FAKE_TRAJ_RATE_RAD_S / 1000.0f)  // per 1kHz tick
+void foc_trajectory_start_move(int32_t target_pos, int32_t vel_max, int32_t accel_max)
+{
+    g_move_target    = target_pos;
+    g_move_vel_max   = vel_max;
+    g_move_accel_max = accel_max;
+    g_move_pending   = true;
+}
+
+// =============================================================================
+// foc_trajectory_position_tick — call from SysTick at 1 kHz, SERVO_ON only
+//
+// M2: real trapezoidal generator (trap_gen.c), replacing M1's fake ramp
+// (which proved this SysTick/position-loop plumbing in isolation first).
+//
+// Gated on traj_stage == TRAJ_STAGE_RUN, not just drive_is_servo_on(): the
+// scaffolding trigger can request SERVO_ON before foc_trajectory_step()'s
+// own ALIGN stage (ALIGN_TICKS @ 20kHz = 5s) has captured traj_enc_offset
+// and gone live -- starting the generator against that dead period would
+// have it complete (or sit mid-move) before real tracking even begins,
+// same class of bug M1 already found and fixed for the fake ramp.
+// =============================================================================
 
 void foc_trajectory_position_tick(void)
 {
     if (traj_stage != TRAJ_STAGE_RUN)
-        return;   // still aligning -- don't advance the ramp against a dead loop
+        return;   // still aligning -- don't start/advance a move against a dead loop
 
-    if (fake_traj_pos_cmd_rad < FAKE_TRAJ_TARGET_RAD)
+    if (g_move_pending)
     {
-        fake_traj_pos_cmd_rad += FAKE_TRAJ_RATE_PER_TICK;
-        if (fake_traj_pos_cmd_rad > FAKE_TRAJ_TARGET_RAD)
-            fake_traj_pos_cmd_rad = FAKE_TRAJ_TARGET_RAD;
+        int32_t start_pos = encoder_get_position() - traj_enc_offset;
+        trap_gen_start(&g_move, start_pos, g_move_target, g_move_vel_max, g_move_accel_max);
+        g_move_pending = false;
     }
+
+    int32_t pos_cmd_counts;
+    float   vel_cmd_counts_s;
+    trap_gen_step(&g_move, DT_POSITION, &pos_cmd_counts, &vel_cmd_counts_s);
+    g_last_pos_cmd_counts   = pos_cmd_counts;
+    g_last_vel_cmd_counts_s = vel_cmd_counts_s;
+
+    float pos_cmd_rad = (float)pos_cmd_counts / COUNTS_PER_RAD;
 
     int32_t raw          = encoder_get_position() - traj_enc_offset;
     float   pos_meas_rad = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
 
     // p_step() has no built-in output clamp (unlike pi_step()'s PIState) --
-    // manual clamp, same idiom as foc_sysid.c's run_position_step().
-    float v = p_step(&position_loop, fake_traj_pos_cmd_rad - pos_meas_rad);
+    // manual clamp, same idiom as foc_sysid.c's run_position_step(). Pure
+    // feedback for now, no velocity feedforward from the generator's own
+    // vel_cmd_counts_s yet -- deferred to its own separate validation once
+    // basic tracking is proven, per the plan.
+    float v = p_step(&position_loop, pos_cmd_rad - pos_meas_rad);
     if (v >  POSITION_VEL_LIMIT) v =  POSITION_VEL_LIMIT;
     if (v < -POSITION_VEL_LIMIT) v = -POSITION_VEL_LIMIT;
     vel_cmd_rad_sec = v;

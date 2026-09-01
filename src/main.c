@@ -148,15 +148,20 @@ int main(void)
     system_initialized = true;
 
 #if RUN_MODE == RUN_MODE_CLOSED_LOOP
-    // M1 bench-test scaffolding (trajectory-streaming plan): force SERVO_ON
-    // with no SPI/Pi involved at all, so the new SysTick + position-loop
-    // path can be verified in isolation. expected_samples set to a
-    // placeholder large enough that drive.c's drain-check (SERVO_ON exit)
-    // doesn't trip after the very first tick against an empty, unused ring
-    // (see drive.c:207-209 -- the ring_count()==0 branch would otherwise
-    // fire immediately). Delete this whole block once M3 provides the real
-    // SPI-triggered BLOCK_HDR/DATA path.
+    // M2 bench-test scaffolding (trajectory-streaming plan): force SERVO_ON
+    // and request a real trapezoidal move with no SPI/Pi involved at all,
+    // so trap_gen.c + the position-loop path can be verified in isolation
+    // before wiring the real MOVE_CMD opcode over SPI RX. expected_samples
+    // set to a placeholder covering the move (~0.87s: t_accel=0.2s*2 +
+    // t_cruise=0.467s, see trap_gen_start()'s math) plus settle time --
+    // drive.c's drain-check (SERVO_ON exit) needs expected_samples>0 or
+    // the ring_count()==0 branch would fire immediately against an unused
+    // ring (drive.c:207-209). Target/limits match M1's visible-on-the-
+    // bench scale (~3 rad, ~5 rad/s) converted to counts
+    // (COUNTS_PER_RAD ~= 1303.8): delete this whole block once M3 provides
+    // the real SPI-triggered MOVE_CMD path.
     expected_samples = 3000u;   // 3s @ 1kHz
+    foc_trajectory_start_move(4000, 6000, 30000);  // ~3.07 rad, ~4.6 rad/s, ~23 rad/s^2
     drive_request_servo_on();
 #endif
 
