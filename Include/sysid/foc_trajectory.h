@@ -14,8 +14,5 @@
 // foc_trajectory_step — call from TIM1 ISR at 20 kHz, RUN_MODE_CLOSED_LOOP only
 void foc_trajectory_step(void);
 
-// foc_trajectory_position_tick — call from SysTick at 1 kHz, SERVO_ON only
-void foc_trajectory_position_tick(void);
-
 // foc_trajectory_reset — call on fault recovery or re-enable
 void foc_trajectory_reset(void);
