@@ -19,9 +19,9 @@
 #include "loops.h"
 #include "plant.h"
 #include "control.h"
+#include "ringBuffer.h"
 #include "pwm.h"
 #include "config.h"
-#include "foc_trajectory.h"
 #include <math.h>
 #include <stdint.h>
 
@@ -202,22 +202,12 @@ void drive_sm_run(void)
 
     // ── SERVO_ON — closed-loop FOC with trajectory from Pi ───────────────────
     // Init happens at transition in the IDLE case above, not here.
-    // This block only runs the running-state logic + the completion check.
-    //
-    // expected_samples>0 branch is M1/M2 bench-scaffolding only (main.c sets
-    // a placeholder duration when triggering a move without real SPI). The
-    // real path (MOVE_CMD over SPI RX, spi.c) never sets expected_samples,
-    // so it falls to the second branch: exit once the trapezoidal generator
-    // itself reports done (foc_trajectory_move_active()==false), not on
-    // ring drain -- the ring is never populated under the single-command
-    // architecture, so the old ring_count()==0 check would fire one tick
-    // after SERVO_ON entry, before the generator ever got to run.
+    // This block only runs the running-state logic + the drain check.
     case STATE_SERVO_ON:
         if ((expected_samples > 0u && samples_consumed >= expected_samples) ||
             (expected_samples == 0u &&
-             first_sample_ready && samples_consumed > 0 &&
-             !foc_trajectory_move_active()))
-        {
+             ring_count() == 0u && first_sample_ready && samples_consumed > 0))
+        {   
             pwm_disable();
             state              = STATE_IDLE;
             starting_flag      = 1;
