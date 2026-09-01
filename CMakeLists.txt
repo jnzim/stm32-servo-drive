@@ -17,7 +17,6 @@ add_executable(fw.elf
     src/control.c
     src/drive.c
     src/loops.c
-    src/trap_gen.c
     src/clock.c
     src/tim1.c
     src/pwm.c
