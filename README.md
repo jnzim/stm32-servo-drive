@@ -406,15 +406,18 @@ referenced by the currently-inactive `drive.c`/ring-buffer path).
 
 ### Opcode protocol (designed, not currently consumed by the active SPI path)
 
+Values below are `protocol.h`'s (authoritative — `ringBuffer.c` checks incoming
+`TrajSlot.opcode` against these; the table here was previously stale/wrong).
+
 | Opcode     | Value | Description                       |
 |------------|-------|-----------------------------------|
 | NOP        | 0x00  | No-op                             |
-| BLOCK_HDR  | 0x03  | Start trajectory → STATE_SERVO_ON |
-| DATA       | 0x04  | Trajectory sample packet          |
-| READY_ACK  | 0x05  | Pi acknowledges READY signal      |
-| TELEM_REQ  | 0x06  | Pi requests telemetry frame       |
-| OPEN_LOOP  | 0x07  | Start open-loop → STATE_OPEN_LOOP |
-| STOP       | 0x08  | Stop → STATE_IDLE                 |
+| BLOCK_HDR  | 0x01  | Start trajectory → STATE_SERVO_ON |
+| DATA       | 0x02  | Trajectory sample packet          |
+| READY_ACK  | 0x03  | Pi acknowledges READY signal      |
+| TELEM_REQ  | 0x04  | Pi requests telemetry frame       |
+| OPEN_LOOP  | 0x05  | Start open-loop → STATE_OPEN_LOOP |
+| STOP       | 0x06  | Stop → STATE_IDLE                 |
 
 ---
 
@@ -436,7 +439,7 @@ referenced by the currently-inactive `drive.c`/ring-buffer path).
 | `drive.c`                 | Designed drive FSM — not currently called (see State Machines) |
 | `servo_sm.c`              | Prototype FSM — not in the build                              |
 | `ringBuffer.c`, `plant.c` | Ring buffer + simulated plant, used by the not-yet-active trajectory path |
-| `protocol.h`              | `TrajSample`, `TelemetryFrame`, opcodes, drive states (design surface for `RUN_MODE_CLOSED_LOOP`) |
+| `protocol.h`              | `TrajSlot`, `BlockHdr`, `TelemetryFrame`, opcodes, drive states (design surface for `RUN_MODE_CLOSED_LOOP`) |
 
 ---
 
