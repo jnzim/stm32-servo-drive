@@ -50,6 +50,27 @@ void TIM1_UP_TIM10_IRQHandler(void)
 #endif
 }
 
+// =============================================================================
+// SysTick_Handler — 1 kHz. Drive state machine + (SERVO_ON only) the
+// position loop / ring-buffer consumption -- deliberately NOT in the 20kHz
+// TIM1 ISR, per the architecture already documented across drive.c,
+// foc_trajectory.h, and ringBuffer.c's own comments (ring buffer's single
+// reader is meant to be SysTick). Priority set explicitly below so this can
+// never preempt the real-time control loop.
+// =============================================================================
+void SysTick_Handler(void)
+{
+    tick_ms++;
+
+    if (!system_initialized)
+        return;
+
+    drive_sm_run();
+
+    if (drive_is_servo_on())
+        foc_trajectory_position_tick();
+}
+
 int main(void)
 {
     system_initialized = false;
@@ -118,7 +139,26 @@ int main(void)
 
     SysTick_Config(SystemCoreClock / 1000u);
 
+    // Strictly lower priority (higher number) than the 20kHz control loop
+    // (TIM1_UP_TIM10_IRQn=0, pwm.c) and everything else (ADC=1, DMA1_Stream3/
+    // EXTI15_10=2) -- SysTick must never preempt real-time control. 15 is
+    // what ringBuffer.c's own comment already anticipates for this.
+    NVIC_SetPriority(SysTick_IRQn, 15);
+
     system_initialized = true;
+
+#if RUN_MODE == RUN_MODE_CLOSED_LOOP
+    // M1 bench-test scaffolding (trajectory-streaming plan): force SERVO_ON
+    // with no SPI/Pi involved at all, so the new SysTick + position-loop
+    // path can be verified in isolation. expected_samples set to a
+    // placeholder large enough that drive.c's drain-check (SERVO_ON exit)
+    // doesn't trip after the very first tick against an empty, unused ring
+    // (see drive.c:207-209 -- the ring_count()==0 branch would otherwise
+    // fire immediately). Delete this whole block once M3 provides the real
+    // SPI-triggered BLOCK_HDR/DATA path.
+    expected_samples = 3000u;   // 3s @ 1kHz
+    drive_request_servo_on();
+#endif
 
     while (1)
     {
