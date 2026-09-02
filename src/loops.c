@@ -32,7 +32,7 @@ PIState velocity_loop;
 PState  position_loop;
 
 // ── Inter-loop setpoints ──────────────────────────────────────────────────────
-volatile float vel_cmd_rad_sec  = 0.0f;
+float          vel_cmd_rad_sec  = 0.0f;
 float          iq_cmd           = 0.0f;
 volatile float v_q_cmd          = 0.0f; 
 

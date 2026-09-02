@@ -6,10 +6,7 @@
 
 #define RUN_MODE_SYSID        0
 #define RUN_MODE_CLOSED_LOOP  1
-// M1 bench test (trajectory-streaming plan): fake trajectory through the
-// real position loop via the new SysTick handler, zero SPI/ring involved.
-// Revert to RUN_MODE_SYSID once this milestone is done.
-#define RUN_MODE              RUN_MODE_CLOSED_LOOP
+#define RUN_MODE              RUN_MODE_SYSID
 
 // =============================================================================
 // Sysid test selector

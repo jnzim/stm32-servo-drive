@@ -9,10 +9,7 @@ extern PIState velocity_loop;
 extern PState  position_loop;
 
 // ── Inter-loop setpoints ──────────────────────────────────────────────────────
-// vel_cmd_rad_sec is volatile: written by SysTick (position loop), read by
-// the TIM1 ISR's decimated velocity loop -- genuinely cross-ISR now that the
-// position loop lives in SysTick rather than sharing the same 20kHz context.
-extern volatile float vel_cmd_rad_sec;
+extern float          vel_cmd_rad_sec;
 extern float          iq_cmd;
 extern volatile float v_q_cmd;
 
