@@ -150,18 +150,13 @@ int main(void)
 
     system_initialized = true;
 
-#if RUN_MODE == RUN_MODE_CLOSED_LOOP
-    // Bench-test scaffolding (trajectory-streaming rebuild): force SERVO_ON
-    // and request one hardcoded move, no SPI/Pi involved, so the SysTick +
-    // position-loop + trapezoidal-generator path can be verified in
-    // isolation before the real SPI MOVE_CMD path is wired up. Delete this
-    // whole block once that real path exists. expected_samples set to a
-    // placeholder large enough that drive.c's drain-check (SERVO_ON exit)
-    // doesn't trip on the first tick against an empty, unused ring.
-    expected_samples = 3000u;   // 3s @ 1kHz
-    foc_trajectory_start_move(3900, 3900, 13000);  // ~3.0 rad, ~3.0 rad/s, ~10.0 rad/s^2
-    drive_request_servo_on();
-#endif
+    // Bench-test scaffolding (forced SERVO_ON + a hardcoded move, no SPI
+    // involved) is gone now that the real path is wired: DMA1_Stream3_
+    // IRQHandler (spi.c) parses SPI2_OP_MOVE_CMD and calls
+    // foc_trajectory_start_move() + drive_request_servo_on() itself, driven
+    // by whatever the Pi actually sends. drive.c's STATE_SERVO_ON exit
+    // checks foc_trajectory_move_active() (generator DONE) instead of the
+    // expected_samples placeholder that scaffolding needed.
 
     while (1)
     {

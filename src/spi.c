@@ -30,6 +30,8 @@
 #include "protocol.h"
 #include "config.h"
 #include "stm32f4xx.h"
+#include "foc_trajectory.h"
+#include "drive.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -349,6 +351,30 @@ void DMA1_Stream3_IRQHandler(void)
                   DMA_LIFCR_CFEIF3;
 
     cnt_telem++;
+
+    // MOVE_CMD parsing -- single-buffer spi2_rx_buf still has the known,
+    // documented tear race (DMA can start overwriting it with the next
+    // transaction while this read is in progress); that's a separate,
+    // deferred hardening step (RX DMA double-buffering), not fixed here.
+    // A torn MOVE_CMD just fails its own CRC below and is never acted on --
+    // safe by construction either way, no move starts from bad data.
+    const uint8_t *frame = (const uint8_t *)spi2_rx_buf;
+    if (frame[0] == SPI2_OP_MOVE_CMD)
+    {
+        MoveCmd cmd;
+        memcpy(&cmd, frame, sizeof(cmd));
+
+        uint16_t calc = crc16_calc((const uint8_t *)&cmd, MOVE_CMD_CRC_LEN);
+        if (calc == cmd.crc16)
+        {
+            foc_trajectory_start_move(cmd.target_pos, cmd.vel_max, cmd.accel_max);
+            drive_request_servo_on();
+        }
+        else
+        {
+            cnt_error++;
+        }
+    }
 }
 
 
