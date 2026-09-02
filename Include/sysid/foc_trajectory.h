@@ -23,11 +23,14 @@ void foc_trajectory_position_tick(void);
 // foc_trajectory_reset — call on fault recovery or re-enable
 void foc_trajectory_reset(void);
 
-// foc_trajectory_start_move — request a move (counts, counts/s, counts/s^2,
-// relative to the post-ALIGN encoder offset). Safe to call before RUN
-// begins (e.g. from boot scaffolding, or later the SPI RX ISR) — just
-// latches the request; foc_trajectory_position_tick() starts the generator
-// for real once traj_stage reaches RUN.
+// foc_trajectory_start_move — request a move. target_pos is a DELTA in
+// counts from wherever the stage actually is when the move starts, not an
+// absolute position -- resolved against the live encoder position inside
+// foc_trajectory_position_tick(), not here. vel_max/accel_max are
+// counts/s / counts/s^2 magnitudes. Safe to call before RUN begins (e.g.
+// from the SPI RX ISR while still in ALIGN) — just latches the request;
+// foc_trajectory_position_tick() starts the generator for real once
+// traj_stage reaches RUN.
 void foc_trajectory_start_move(int32_t target_pos, int32_t vel_max, int32_t accel_max);
 
 // foc_trajectory_move_active — true from a requested/running move until the

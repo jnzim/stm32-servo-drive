@@ -179,8 +179,15 @@ void foc_trajectory_position_tick(void)
     {
         if (g_move_pending)
         {
-            int32_t start_pos = encoder_get_position() - traj_enc_offset;
-            trap_gen_start(&g_move, start_pos, g_move_target, g_move_vel_max, g_move_accel_max);
+            // g_move_target is a delta from wherever the stage actually is
+            // right now, not an absolute position -- resolved here, at the
+            // moment the move actually starts (traj_enc_offset is only
+            // valid once ALIGN has finished, which is why this waits for
+            // TRAJ_STAGE_RUN rather than resolving it back when the
+            // command was first received).
+            int32_t start_pos      = encoder_get_position() - traj_enc_offset;
+            int32_t absolute_target = start_pos + g_move_target;
+            trap_gen_start(&g_move, start_pos, absolute_target, g_move_vel_max, g_move_accel_max);
             g_move_pending = false;
         }
 
