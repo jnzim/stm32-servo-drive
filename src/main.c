@@ -148,15 +148,15 @@ int main(void)
     system_initialized = true;
 
 #if RUN_MODE == RUN_MODE_CLOSED_LOOP
-    // M1 bench-test scaffolding (trajectory-streaming plan): force SERVO_ON
-    // with no SPI/Pi involved at all, so the new SysTick + position-loop
-    // path can be verified in isolation. expected_samples set to a
+    // Bench-test scaffolding (trajectory-streaming rebuild): force SERVO_ON
+    // and request one hardcoded move, no SPI/Pi involved, so the SysTick +
+    // position-loop + trapezoidal-generator path can be verified in
+    // isolation before the real SPI MOVE_CMD path is wired up. Delete this
+    // whole block once that real path exists. expected_samples set to a
     // placeholder large enough that drive.c's drain-check (SERVO_ON exit)
-    // doesn't trip after the very first tick against an empty, unused ring
-    // (see drive.c:207-209 -- the ring_count()==0 branch would otherwise
-    // fire immediately). Delete this whole block once M3 provides the real
-    // SPI-triggered BLOCK_HDR/DATA path.
+    // doesn't trip on the first tick against an empty, unused ring.
     expected_samples = 3000u;   // 3s @ 1kHz
+    foc_trajectory_start_move(3900, 3900, 13000);  // ~3.0 rad, ~3.0 rad/s, ~10.0 rad/s^2
     drive_request_servo_on();
 #endif
 

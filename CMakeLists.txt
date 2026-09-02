@@ -23,6 +23,7 @@ add_executable(fw.elf
     src/drv8353.c
     src/system_stm32f4xx.c
     src/current_feedback.c
+    src/trap_gen.c
     src/sysid/foc_sysid.c
     src/sysid/foc_trajectory.c
     startup/startup_stm32f411xe.s
