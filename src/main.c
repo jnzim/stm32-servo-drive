@@ -51,12 +51,17 @@ void TIM1_UP_TIM10_IRQHandler(void)
 }
 
 // =============================================================================
-// SysTick_Handler — 1 kHz. Drive state machine + (SERVO_ON only) the
-// position loop / ring-buffer consumption -- deliberately NOT in the 20kHz
-// TIM1 ISR, per the architecture already documented across drive.c,
-// foc_trajectory.h, and ringBuffer.c's own comments (ring buffer's single
-// reader is meant to be SysTick). Priority set explicitly below so this can
-// never preempt the real-time control loop.
+// SysTick_Handler — 1 kHz. Drive state machine + position tick --
+// deliberately NOT in the 20kHz TIM1 ISR, per the architecture already
+// documented across drive.c and foc_trajectory.h. Priority set explicitly
+// below so this can never preempt the real-time control loop.
+//
+// foc_trajectory_position_tick() is called every tick, not just while
+// servo is on: it only actually runs the generator/position loop when
+// servo-on, but it always reports telemetry -- calling it conditionally
+// meant the exact tick that flips drive_state to IDLE (inside
+// drive_sm_run(), just above) never got a telemetry report for that new
+// state, so the Pi never saw completion.
 // =============================================================================
 void SysTick_Handler(void)
 {
@@ -66,9 +71,7 @@ void SysTick_Handler(void)
         return;
 
     drive_sm_run();
-
-    if (drive_is_servo_on())
-        foc_trajectory_position_tick();
+    foc_trajectory_position_tick();
 }
 
 int main(void)

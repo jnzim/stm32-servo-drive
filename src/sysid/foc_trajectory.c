@@ -165,42 +165,52 @@ void foc_trajectory_step(void)
 
 void foc_trajectory_position_tick(void)
 {
-    if (traj_stage != TRAJ_STAGE_RUN)
-        return;
+    int32_t pos_cmd_counts   = (int32_t)lroundf(g_move.pos);
+    float   vel_cmd_counts_s = 0.0f;
 
-    if (g_move_pending)
+    // Only actually run the generator/position loop while servo is on and
+    // past ALIGN -- but telemetry below is reported every tick regardless,
+    // so drive_state always reflects reality. Previously this whole
+    // function (including the telemetry write) was skipped once
+    // drive_is_servo_on() went false, which meant the tick that flips
+    // drive_state to IDLE never got reported -- the Pi saw the last
+    // SERVO_ON frame forever and never observed completion.
+    if (drive_is_servo_on() && traj_stage == TRAJ_STAGE_RUN)
     {
-        int32_t start_pos = encoder_get_position() - traj_enc_offset;
-        trap_gen_start(&g_move, start_pos, g_move_target, g_move_vel_max, g_move_accel_max);
-        g_move_pending = false;
+        if (g_move_pending)
+        {
+            int32_t start_pos = encoder_get_position() - traj_enc_offset;
+            trap_gen_start(&g_move, start_pos, g_move_target, g_move_vel_max, g_move_accel_max);
+            g_move_pending = false;
+        }
+
+        trap_gen_step(&g_move, DT_POSITION, &pos_cmd_counts, &vel_cmd_counts_s);
+        float pos_cmd_rad = (float)pos_cmd_counts / COUNTS_PER_RAD;
+
+        int32_t raw          = encoder_get_position() - traj_enc_offset;
+        float   pos_meas_rad = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
+
+        // p_step() has no built-in output clamp (unlike pi_step()'s
+        // PIState) -- manual clamp, same idiom as foc_sysid.c's
+        // run_position_step(). Pure position feedback for now -- no
+        // velocity feedforward from the generator's own vel_cmd_counts_s
+        // yet, that's its own later step.
+        float v = p_step(&position_loop, pos_cmd_rad - pos_meas_rad);
+        if (v >  POSITION_VEL_LIMIT) v =  POSITION_VEL_LIMIT;
+        if (v < -POSITION_VEL_LIMIT) v = -POSITION_VEL_LIMIT;
+        vel_cmd_rad_sec = v;
+
+        samples_consumed++;
+        first_sample_ready = 1;
     }
 
-    int32_t pos_cmd_counts;
-    float   vel_cmd_counts_s;
-    trap_gen_step(&g_move, DT_POSITION, &pos_cmd_counts, &vel_cmd_counts_s);
-    float pos_cmd_rad = (float)pos_cmd_counts / COUNTS_PER_RAD;
-
-    int32_t raw          = encoder_get_position() - traj_enc_offset;
-    float   pos_meas_rad = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
-
-    // p_step() has no built-in output clamp (unlike pi_step()'s PIState) --
-    // manual clamp, same idiom as foc_sysid.c's run_position_step(). Pure
-    // position feedback for now -- no velocity feedforward from the
-    // generator's own vel_cmd_counts_s yet, that's its own later step.
-    float v = p_step(&position_loop, pos_cmd_rad - pos_meas_rad);
-    if (v >  POSITION_VEL_LIMIT) v =  POSITION_VEL_LIMIT;
-    if (v < -POSITION_VEL_LIMIT) v = -POSITION_VEL_LIMIT;
-    vel_cmd_rad_sec = v;
-
-    samples_consumed++;
-    first_sample_ready = 1;
-
-    // Real telemetry, once per tick -- named fields, no relabeling.
-    // iq_cmd/foc_iq_meas are already in amps (current-loop domain);
-    // TelemetryFrame reports both in mA.
+    // Real telemetry, every tick, regardless of drive state -- named
+    // fields, no relabeling. iq_cmd/foc_iq_meas are already in amps
+    // (current-loop domain); TelemetryFrame reports both in mA.
+    int32_t pos_fbk = encoder_get_position() - traj_enc_offset;
     TelemetryFrame frame = {
         .pos_cmd          = pos_cmd_counts,
-        .pos_fbk          = raw,
+        .pos_fbk          = pos_fbk,
         .vel_cmd          = (int32_t)lroundf(vel_cmd_counts_s),
         .vel_fbk          = encoder_get_velocity(),
         .timestamp_ms     = tick_ms,
