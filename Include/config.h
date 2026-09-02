@@ -306,7 +306,15 @@
 // =============================================================================
 
 #define POSITION_LOOP_KP        200.0f   // (rad/s) per rad of position error -- reverted pending buzz check, see comment above
-#define POSITION_VEL_LIMIT      50.0f    // rad/s -- clamp P output, no windup state to clamp
+#define POSITION_VEL_LIMIT      160.0f  // rad/s (~50.9mm/s @ 2mm pitch) -- clamp P output, no
+                                         // windup state to clamp. Raised from 50.0f (~15.9mm/s)
+                                         // to allow faster point-to-point moves on jz-traj-stream;
+                                         // the 50.0f value was a plain saturation limit (not part
+                                         // of the loop's dynamic design -- see comment above this
+                                         // block) and wasn't implicated in the earlier vq-buzz
+                                         // investigation (that was CURRENT_LOOP_KP/KI and
+                                         // POSITION_LOOP_KP/VEL_FILTER_N interaction). Verify on
+                                         // bench at 25mm/s before trusting 50mm/s.
 
 // =============================================================================
 // Position step test parameters
