@@ -39,17 +39,20 @@
  * =============================================================================
  */
 typedef struct __attribute__((packed)) {
-    int32_t  pos_cmd;
-    int32_t  pos_fbk;
-    int32_t  vel_cmd;
-    int32_t  vel_fbk;
+    int32_t  pos_cmd;           /* counts */
+    int32_t  pos_fbk;           /* counts */
+    int32_t  vel_cmd;           /* counts/s */
+    int32_t  vel_fbk;           /* counts/s */
     uint32_t timestamp_ms;
-    uint8_t  drive_state;
+    uint8_t  drive_state;       /* DRIVE_IDLE/DRIVE_SERVO_ON/etc above */
     uint8_t  fault_flags;
     uint32_t samples_consumed;
-    int16_t  iq_cmd;
-    int16_t  i_q_fbk;
-    int16_t  v_q_cmd;
+    int16_t  iq_cmd;            /* mA */
+    int16_t  i_q_fbk;           /* mA */
+    uint16_t crc16;             /* covers bytes 0..(offsetof-1) -- TELEM_CRC_LEN below.
+                                 * Was v_q_cmd -- dropped to make room. This was the
+                                 * one 32-byte frame in the protocol with no self-check
+                                 * at all (TrajSlot and SysIdSample both have one). */
 } TelemetryFrame;
 
 typedef struct __attribute__((packed))
@@ -116,6 +119,7 @@ _Static_assert(sizeof(TrajSlot) == 32, "TrajSlot must be exactly 32 bytes");
 
 #define TRAJ_CRC_LEN   offsetof(TrajSlot, crc16)
 #define SYSID_CRC_LEN  offsetof(SysIdSample, crc)
+#define TELEM_CRC_LEN  offsetof(TelemetryFrame, crc16)
 
 /* =============================================================================
  * CRC-16-CCITT utilities

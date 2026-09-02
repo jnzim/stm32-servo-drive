@@ -22,10 +22,15 @@
 #include "pwm.h"
 #include "loops.h"
 #include "trap_gen.h"
-#include "drive.h" // drive_is_servo_on() -- guards the current/velocity loop below
+#include "drive.h" // drive_is_servo_on() / drive_get_state()
+#include "spi.h"   // spi_update_telem()
 
 #include <math.h>
 #include <stdint.h>
+
+// Defined in main.c, incremented by SysTick -- no shared header for this
+// one global yet, declared here the same way it already is in main.c.
+extern volatile uint32_t tick_ms;
 
 // =============================================================================
 // Alignment stage
@@ -56,6 +61,7 @@ static int32_t  g_move_accel_max = 0;
 
 float foc_vq_applied = 0.0f;
 float foc_vd_applied = 0.0f;
+float foc_iq_meas     = 0.0f;  // real i_q feedback, exposed for telemetry in SysTick
 
 // =============================================================================
 // foc_theta_from_encoder — electrical angle relative to alignment offset
@@ -114,8 +120,8 @@ void foc_trajectory_step(void)
             float theta = foc_theta_from_encoder();
 
             // ── Current feedback ─────────────────────────────────────────────
-            float i_d_meas, i_q_meas;
-            current_feedback_get_dq(theta, &i_d_meas, &i_q_meas);
+            float i_d_meas;
+            current_feedback_get_dq(theta, &i_d_meas, &foc_iq_meas);
 
             // ── Velocity loop @ 5 kHz ────────────────────────────────────────
             if (++vel_div >= 4u)
@@ -130,7 +136,7 @@ void foc_trajectory_step(void)
             // ── Current loop @ 20 kHz ────────────────────────────────────────
             foc_vd_applied = 0.0f;
             foc_vq_applied = pi_step(&current_loop,
-                                     iq_cmd - i_q_meas,
+                                     iq_cmd - foc_iq_meas,
                                      DT_CURRENT);
             pwm_apply_dq(foc_vd_applied, foc_vq_applied, theta);
         }
@@ -188,6 +194,23 @@ void foc_trajectory_position_tick(void)
 
     samples_consumed++;
     first_sample_ready = 1;
+
+    // Real telemetry, once per tick -- named fields, no relabeling.
+    // iq_cmd/foc_iq_meas are already in amps (current-loop domain);
+    // TelemetryFrame reports both in mA.
+    TelemetryFrame frame = {
+        .pos_cmd          = pos_cmd_counts,
+        .pos_fbk          = raw,
+        .vel_cmd          = (int32_t)lroundf(vel_cmd_counts_s),
+        .vel_fbk          = encoder_get_velocity(),
+        .timestamp_ms     = tick_ms,
+        .drive_state      = (uint8_t)drive_get_state(),
+        .fault_flags      = 0,
+        .samples_consumed = samples_consumed,
+        .iq_cmd           = (int16_t)lroundf(iq_cmd * 1000.0f),      // A -> mA
+        .i_q_fbk          = (int16_t)lroundf(foc_iq_meas * 1000.0f), // A -> mA
+    };
+    spi_update_telem(&frame);
 }
 
 // =============================================================================
