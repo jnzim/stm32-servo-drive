@@ -6,19 +6,15 @@
 #include "config.h"
 
 
-// Zero-cancellation design from the fitted mechanical plant, re-identified
-// with the stage attached (K=1623.529 rad/s per A, tau=123.67ms -- a much
-// heavier/more damped plant than the bare-motor fit this replaces) at a
-// 50 Hz BW target -- see velocity_bode_plot.py. Nominal PM = 90 deg from
-// the pole-zero-cancelled open loop, but measured phase in the 40-90Hz
-// crossover-adjacent band sits at -70 to -75 deg against a fitted -85 to
-// -88 deg there (tight, repeatable, high coherence -- not noise), so the
-// first-order model isn't a complete description right where 50Hz sits.
-// Unverified against closed-loop measurement -- run SYSID_TEST_CL_VEL_CHIRP
-// and check the real PM before trusting this like the position loop's note
-// above.
-#define VEL_KP              0.0239f    // A / (rad/s)
-#define VEL_KI              0.1935f    // A / rad
+// Replaced this branch's own stage-attached fit (K=1623.529 rad/s per A,
+// tau=123.67ms, VEL_KP=0.0239/VEL_KI=0.1935) with jz-dev's validated
+// numbers instead -- that fit was flagged by its own comment as never
+// closed-loop verified, and it's ~25x/~20x off from jz-dev's K/tau on the
+// same physical stage. jz-dev's values were cross-checked three ways
+// (amplitude-comparison chirp, closed-loop chirp margin, step response),
+// so they're the ones to trust here too.
+#define VEL_KP              0.02053f   // A / (rad/s)
+#define VEL_KI              1.6505f    // A / rad
 #define VEL_IQ_LIMIT        0.5f
 
 
@@ -74,6 +70,29 @@ void loops_reset(void)
     vel_div            = 0;
     samples_consumed   = 0;
     first_sample_ready = 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// velocity_loop_step — velocity PI + friction feedforward, ported from
+// jz-dev's shared function (single source of truth there for sysid tests
+// and real trajectory mode). Fc/Fv are from SYSID_TEST_FRICTION_SWEEP on
+// this same physical stage (averaged across 3 repeat runs); tanh()
+// replaces a hard sign(vel_cmd) so this doesn't chatter full Coulomb
+// torque back and forth right at v=0, which every real move crosses
+// through on its final settle. Feedforward is based on vel_cmd (the
+// reference), not vel_meas -- it supplies the expected disturbance-
+// canceling torque for where the loop is trying to go; the PI term
+// already reacts to actual measured error.
+// ─────────────────────────────────────────────────────────────────────────────
+float velocity_loop_step(float vel_cmd_rad_sec, float vel_meas_rad, float dt)
+{
+    float iq = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, dt);
+
+    float ff_sign = tanhf(vel_cmd_rad_sec / FRICTION_FF_SMOOTH_RAD_S);
+    iq += (FRICTION_FF_COULOMB_MA * 0.001f) * ff_sign +
+          (FRICTION_FF_VISCOUS_MA_PER_RADS * 0.001f) * vel_cmd_rad_sec;
+
+    return iq;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

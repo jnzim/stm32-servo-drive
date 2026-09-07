@@ -318,6 +318,16 @@
                                          // envelope; going faster needs the oscillation understood
                                          // first (see project memory / jz-traj-stream notes).
 
+// Friction feedforward -- ported from jz-dev (velocity_loop_step(), loops.c).
+// Fc/Fv from SYSID_TEST_FRICTION_SWEEP on this same physical stage,
+// averaged across 3 repeat runs. FRICTION_FF_SMOOTH_RAD_S replaces a hard
+// sign(v) with tanh(v/FRICTION_FF_SMOOTH_RAD_S) so the feedforward doesn't
+// chatter full Coulomb torque back and forth right at v=0 -- matters here
+// specifically since every real move ends by crossing through v=0 to settle.
+#define FRICTION_FF_COULOMB_MA           94.0f   // mA
+#define FRICTION_FF_VISCOUS_MA_PER_RADS   1.9f   // mA per rad/s
+#define FRICTION_FF_SMOOTH_RAD_S          2.0f   // rad/s
+
 // =============================================================================
 // Position step test parameters
 // =============================================================================

@@ -128,9 +128,10 @@ void foc_trajectory_step(void)
             {
                 vel_div = 0u;
                 float vel_fbk_rad = (float)encoder_get_velocity() / COUNTS_PER_RAD;
-                iq_cmd = pi_step(&velocity_loop,
-                                 vel_cmd_rad_sec - vel_fbk_rad,
-                                 DT_VELOCITY);
+                // velocity_loop_step(), not a raw pi_step() -- adds the
+                // friction feedforward ported from jz-dev (config.h
+                // FRICTION_FF_*).
+                iq_cmd = velocity_loop_step(vel_cmd_rad_sec, vel_fbk_rad, DT_VELOCITY);
             }
 
             // ── Current loop @ 20 kHz ────────────────────────────────────────
