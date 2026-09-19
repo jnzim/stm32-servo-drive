@@ -27,7 +27,7 @@
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_BREAKAWAY                13
 
-#define SYSID_TEST SYSID_TEST_CL_POS_CHIRP
+#define SYSID_TEST SYSID_TEST_PHASE_CHECK
 
 // SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
 // window (real operating condition, includes any switching-induced ripple).
@@ -591,7 +591,7 @@
 // for 30s on this hardware.
 // =============================================================================
 
-#define PHASE_CHECK_V_MAIN      0.5f     // V -- driven phase
-#define PHASE_CHECK_V_RETURN   -0.25f    // V -- other two phases, balanced return
+#define PHASE_CHECK_V_MAIN      1.5f     // V -- driven phase
+#define PHASE_CHECK_V_RETURN   -0.75f    // V -- other two phases, balanced return
 #define PHASE_CHECK_HOLD_TICKS  40000u   // 2s @ 20kHz -- long enough to read a settled DC value
 #define PHASE_CHECK_ZERO_TICKS   2000u   // 100ms @ 20kHz -- decay margin between phases (same as ALIGN's discharge)
