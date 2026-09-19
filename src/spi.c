@@ -115,6 +115,15 @@ static void spi2_dma_clear_flags(void)
  * update.
  * =============================================================================*/
 
+/*
+ * Write only while the Pi's chip select is idle (NSS high). A transaction is
+ * 32 bytes at 1 MHz = 256us and they arrive about every 294us, so there is a
+ * ~38us idle gap; this 20 kHz loop lands in it regularly. Skipping a tick just
+ * means the Pi reads a slightly older frame -- it samples ~3.4k frames/s out of
+ * 20k produced anyway. Before this, the buffer was rewritten mid-transmission
+ * and every frame went out stitched from several ticks (measured 2026-09-19:
+ * 157637/157637 torn once a working CRC could see it).
+ */
 void spi_sysid_update_latest(int16_t ia_mA,
                              int16_t ib_mA,
                              int16_t ic_mA,
@@ -129,6 +138,10 @@ void spi_sysid_update_latest(int16_t ia_mA,
                              uint16_t flags,
                              uint16_t test_id)
 {
+    /* NSS is active low: high = no transaction in progress. */
+    if (!(GPIOB->IDR & (1u << PIN_RPI_NSS)))
+        return;
+
     SysIdSample *s = &spi_tx_buf;
 
     s->t          = sysid_seq++;

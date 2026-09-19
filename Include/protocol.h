@@ -52,8 +52,22 @@ typedef struct __attribute__((packed)) {
     int16_t  v_q_cmd;
 } TelemetryFrame;
 
+/*
+ * Field order matters (2026-09-19): pad/flags first, crc last.
+ *
+ * The TX DMA keeps one byte fetched ahead in SPI2->DR, so the first byte(s)
+ * of a frame can already be committed before the control loop rewrites the
+ * buffer -- that byte is then stale while the rest is fresh, i.e. a torn
+ * frame. pad (the compile-time test id) and flags (the sysid stage) sit at
+ * offsets 0..3 because they are constant or near-constant, so a stale leading
+ * byte is identical to the fresh one and cannot tear. Everything that changes
+ * every tick sits past the prefetch window. crc moves to the end so it covers
+ * all 30 preceding bytes.
+ */
 typedef struct __attribute__((packed))
 {
+    uint16_t pad;        /* SYSID_TEST id -- constant for a whole run */
+    uint16_t flags;      /* sysid stage -- changes a handful of times per run */
     uint32_t t;
     int16_t ia_mA;
     int16_t ib_mA;
@@ -66,9 +80,7 @@ typedef struct __attribute__((packed))
     uint16_t adc_a;
     uint16_t adc_b;
     uint16_t adc_c;
-    uint16_t flags;
-    uint16_t crc;
-    uint16_t pad;
+    uint16_t crc;        /* last: covers bytes 0..29 */
 } SysIdSample;
 
 /* =============================================================================
