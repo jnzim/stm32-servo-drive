@@ -27,7 +27,7 @@
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_BREAKAWAY                13
 
-#define SYSID_TEST SYSID_TEST_PHASE_CHECK
+#define SYSID_TEST SYSID_TEST_CURRENT_LOOP_CHIRP
 
 // SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
 // window (real operating condition, includes any switching-induced ripple).
