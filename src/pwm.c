@@ -39,9 +39,12 @@
 // ADC trigger:
 //   TIM1 CR2 MMS=111 routes OC4REF as TRGO.
 //   ADC JEXTSEL=1 selects TIM1_TRGO as injected trigger.
-//   CCR4 = PWM_ARR - PWM_SAMPLE_OFFSET fires near PWM peak on downstroke.
-//   Low-side FETs have been conducting since the last CCR crossing on the way
-//   down — sufficient settling time for the CSA at 40 V/V.
+//   CCR4 = PWM_ARR - PWM_SAMPLE_OFFSET; the ADC triggers on the up-count
+//   crossing only. The 3 channels convert sequentially (1.08 us each at
+//   15 cycles), so the offset centers the sequence on the peak: A sampled
+//   ~1.08 us before, B at, C ~1.08 us after -- inside every phase's low-side
+//   window up to ~95% duty. Verified 2026-09-19: scope (GLC vs PC4) and
+//   PHASE_CHECK KCL at 62.5% C duty.
 //
 // volts_to_duty convention:
 //   v is a centered phase voltage in the range [-V_BUS/2, +V_BUS/2].
@@ -69,7 +72,7 @@
 
 #define PWM_ARR           2499u
 #define PWM_CENTER        (PWM_ARR / 2u)
-#define PWM_SAMPLE_OFFSET 50u                  // counts before peak on downstroke
+#define PWM_SAMPLE_OFFSET 168u                 // 3-ch sequence (3x1.08us) centered on peak: B at peak
 #define DUTY_MIN          (PWM_ARR * 0.04f)    // ~4%  = 100 counts
 #define DUTY_MAX          (PWM_ARR * 0.96f)    // ~96% = 2399 counts
 
@@ -165,9 +168,8 @@ void pwm_init(void)
     TIM1->CCR3 = PWM_CENTER;
 
     // -------------------------------------------------------------------------
-    // ADC trigger: CCR4 crosses twice per period (up/down counting), giving 2
-    // injected conversions symmetric around the peak, blended in
-    // ADC_IRQHandler (current_feedback.c).
+    // ADC trigger: up-count CCR4 crossing only (JEXTEN=falling, see
+    // current_feedback_init()), one injected sequence per period.
     // -------------------------------------------------------------------------
 
     TIM1->CCR4 = PWM_ARR - PWM_SAMPLE_OFFSET;

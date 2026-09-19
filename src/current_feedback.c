@@ -106,8 +106,9 @@ void ADC_IRQHandler(void)
     {
         GPIOC->BSRR = (1u << 4);            /* PC4 high — sample point */
 
-        /* Recursive IIR blend, not a fresh 2-sample average -- fires 2x/period
-         * now (JEXTEN=both edges). Noise floor: ~75-80mA -> ~39-42mA RMS. */
+        /* Recursive IIR blend y = (y + x)/2 -- fires ONCE per period (measured
+         * 2026-09-19), so this is a 1-pole low-pass in the current feedback
+         * path, not a 2-sample average. */
         current_adc_raw[0] = (uint16_t)((current_adc_raw[0] + ADC1->JDR1) / 2u);
         current_adc_raw[1] = (uint16_t)((current_adc_raw[1] + ADC1->JDR2) / 2u);
         current_adc_raw[2] = (uint16_t)((current_adc_raw[2] + ADC1->JDR3) / 2u);
@@ -197,9 +198,9 @@ void current_feedback_init(void)
     ADC1->CR1 |= ADC_CR1_SCAN;
 
     ADC1->SMPR1 &= ~((7u << 0) | (7u << 3) | (7u << 6));
-    ADC1->SMPR1 |=  ((ADC_SMP_84_CYCLES << 0) |
-                     (ADC_SMP_84_CYCLES << 3) |
-                     (ADC_SMP_84_CYCLES << 6));
+    ADC1->SMPR1 |=  ((ADC_SMP_15_CYCLES << 0) |
+                     (ADC_SMP_15_CYCLES << 3) |
+                     (ADC_SMP_15_CYCLES << 6));
 
 
 
@@ -210,21 +211,22 @@ void current_feedback_init(void)
         (12u << ADC_JSQR_JSQ4_Pos);
 
     /*
-     * Hardware trigger: TIM1_TRGO, both edges.
+     * Hardware trigger: TIM1_TRGO, falling edge only.
      *
      * Per RM0383 Table 43:
      *   JEXTSEL = 0001 (1) = TIM1_TRGO
-     *   JEXTEN  = 11   (3) = both edges
+     *   JEXTEN  = 10   (2) = falling edge
      *
-     * TIM1 CR2 MMS=111 routes OC4REF as TRGO. In center-aligned PWM, OC4REF
-     * has one rising edge (up-count past CCR4) and one falling edge
-     * (down-count past CCR4) per period, both close to the peak where CCR4
-     * sits — triggering on both gives 2 injected conversions per PWM cycle
-     * instead of 1, averaged together in ADC_IRQHandler for noise reduction.
+     * TIM1 CR2 MMS=111 routes OC4REF as TRGO. PWM mode 1: OC4REF is high
+     * while CNT < CCR4, so the up-count crossing is a FALLING edge. The
+     * 3-channel sequence (SMPR=15 cycles -> 3 x 1.08 us) starts there and is
+     * centered on the counter peak by PWM_SAMPLE_OFFSET (pwm.c). The
+     * down-count edge must not trigger: it would start a second, late
+     * sequence after the peak.
      */
     ADC1->CR2 &= ~(ADC_CR2_JEXTSEL | ADC_CR2_JEXTEN);
     ADC1->CR2 |=  ((1u << ADC_CR2_JEXTSEL_Pos) |
-                   (3u << ADC_CR2_JEXTEN_Pos));
+                   (2u << ADC_CR2_JEXTEN_Pos));
 
     /* Enable JEOC interrupt — ADC_IRQHandler reads results */
     ADC1->CR1 |= ADC_CR1_JEOCIE;
@@ -295,11 +297,11 @@ void current_feedback_calibrate(void)
 
     /*
      * Re-enable hardware trigger and JEOC interrupt after calibration.
-     * Both edges — see current_feedback_init() for why.
+     * Falling edge only — see current_feedback_init() for why.
      */
     ADC1->CR2 &= ~(ADC_CR2_JEXTSEL | ADC_CR2_JEXTEN);
     ADC1->CR2 |=  ((1u << ADC_CR2_JEXTSEL_Pos) |
-                   (3u << ADC_CR2_JEXTEN_Pos));
+                   (2u << ADC_CR2_JEXTEN_Pos));
 
     ADC1->SR = 0u;
 
