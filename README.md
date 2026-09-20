@@ -13,51 +13,99 @@ is now attached (no longer bare-motor).**
 - Every gain is derived from measured system identification, not a datasheet guess or a
   rule of thumb: chirp/step-response Bode plots and curve-fit plant models, re-run whenever
   the plant changes (e.g. the stage being attached).
-- **Current loop:** re-identified against a fresh chirp (R=1.65Ω, L=1.41mH line-to-line),
-  BW target bumped from 500Hz to 1000Hz — the 500Hz design had real margin to spare
-  (PM=85-88°, heavily overdamped). `CURRENT_LOOP_KP/KI = 4.43 / 5184`.
-- **Velocity loop:** re-identified with the stage attached — the plant changed substantially
-  from the bare-motor fit (K=1623.5 rad/s/A, τ=123.67ms now, vs. a much lighter/faster bare
-  motor before). `VEL_KP/KI = 0.0239 / 0.1935`, zero-cancellation design, 50Hz target.
-- **Position loop:** a phase-margin-targeted design (crossover picked from the closed
-  velocity loop's measured phase, not assumed) kept landing its crossover around 41-43Hz —
-  right against a **real mechanical resonance measured at 65-90Hz** in the closed velocity
-  loop's frequency response (dip-then-peak shape in `vel_meas/vel_cmd`, the classic
-  signature of a two-inertia system — motor and load coupled through the screw's
-  compliance). An amplitude sweep (0.35/0.5/0.75/0.9A) showed that resonance's frequency and
-  damping both move non-monotonically with excitation amplitude, which a fixed linear mode
-  wouldn't do — most likely backlash in the coupling modulating effective stiffness under
-  load, not yet confirmed or fixed mechanically. Rather than chase a precise design against
-  a moving target (or add a notch filter tuned to a resonance that's already been observed
-  to shift), the position loop was deliberately backed off to `POSITION_LOOP_KP=200`
-  (crossover ~15-20Hz, clear of the resonance band). Verified against the entire closed
-  position loop (`SYSID_TEST_CL_POS_CHIRP`), reconstructing the open-loop response directly
-  from measured closed-loop data (`L = H/(1-H)`): **21.5 Hz closed-loop bandwidth, 82.8°
-  phase margin, 18.6 dB gain margin**, with the open-loop reconstruction rolling off
-  smoothly straight through the 65-90Hz resonance band — no bump at all at this crossover.
-  Velocity feedforward (not yet implemented) is the planned way to recover tracking
-  performance without spending this margin back.
+- **Measurement path verified first (2026-09-19).** Two defects were found and fixed before
+  any of the numbers below were trusted, because both corrupted the data every earlier
+  identification run was built on:
+  - The ADC converts the three phase currents sequentially. At 84-cycle sample time that
+    put phase C's sample ~11 us after the trigger, outside its low-side conduction window
+    above ~58% duty, so `ic` was wrong. Fixed by shortening the sample time and centering
+    the 3-channel sequence on the PWM peak (`3720707`). Confirmed by a falsification run:
+    with the old timing, the phase-check KCL sum breaks by -1119 mA; with the new timing it
+    closes to +16 +/- 8 mA.
+  - Every telemetry frame was stitched from several control ticks — the 20 kHz loop rewrote
+    the DMA's live buffer mid-transmission — and the CRC meant to catch that had a
+    truncation bug that made it blind to it. Fixed by writing only while the bus is idle,
+    leading the frame with constant fields, and a correct table-driven CRC (`7ec52fb`).
+    Torn frames went from 157637/157637 (100%) to 1/12089.
+
+  Earlier figures in this README came through that path. Where they disagree with the
+  values below, the values below are the ones that were measured after the fixes.
+
+- **Current loop** (identified on the bare motor): plant R = 1.479 ohm, L = 1.327 mH,
+  electrical pole 177 Hz. `CURRENT_LOOP_KP/KI = 2.07 / 2450`, zero-cancellation design.
+  Measured closed loop: **crossover 256 Hz, PM 88.6 deg, closed-loop BW 256 Hz**, against a
+  design predicting 248 Hz and 85-88 deg. Coherence >= 0.96 from 10 to 500 Hz; the ceiling
+  is the 1 kHz telemetry Nyquist, not measurement quality.
+
+- **Velocity loop** (stage attached): plant backed out of a P-only chirp with the friction
+  feedforward bypassed — with it in the loop the controller is not the constant the
+  back-out assumes, and the fit inverts (closed-loop DC gain reads +1.47 dB, which is
+  impossible for P-only, and K comes out negative). Measured **K = 177.2 rad/s per A,
+  tau = 14.19 ms (pole 11.2 Hz)**.
+
+  The velocity gain is set by how much phase the feedback filter leaves, not by a
+  bandwidth target. `VEL_FILTER_N` was 40 (a 2 ms window, 1 ms group delay, 0.36 deg/Hz
+  inside the loop); backing the plant out of the measured loop showed phase passing -90 deg
+  (-136.6 deg at 120 Hz), which a single-pole plant cannot do. At N = 20 that recovers to
+  -115.8 deg. Shortening the filter costs velocity-measurement noise — the trade that
+  drove it back to 40 previously — so it was re-checked at rest: iq 10 mA rms, vq 21 mV
+  rms, against the +-400-800 mA / +-2-3 V buzz that caused the earlier revert.
+
+  With that phase recovered, `VEL_KP/KI = 0.045 / 3.17` (zero on the measured 11.2 Hz
+  pole): **crossover 86.9 Hz, PM 66.4 deg, closed-loop BW 158 Hz, peak |H| 0.03 dB**.
+  `VEL_IQ_LIMIT` raised 0.5 -> 1.5 A; 0.5 A was a bring-up placeholder that clamped the PI
+  for ~20% of a loaded position chirp and saturated the measurement.
+
+- **Position loop** (stage attached): pure P around the velocity loop, `POSITION_LOOP_KP =
+  260`. The binding constraint turned out to be the inner loop, not this gain: at 260 with
+  the old velocity tuning the position loop crossed at 32.5 Hz with only 47.4 deg PM,
+  because the velocity loop crossed at just 40 Hz — 1.2x the outer loop, where the usual
+  guideline is 3-5x. Speeding the velocity loop to 86.9 Hz moved the position loop to
+  **crossover 40.4 Hz, PM 60.2 deg, GM 12.2 dB at 81.9 Hz, closed-loop BW 53.5 Hz** with
+  the outer gain untouched. A 1 rad step: **15 ms rise (10-90%), 0.4% overshoot, 17 ms
+  settle to 2%**, repeatable across runs, with iq peaking at the 1.5 A clamp.
+
+  Frequency-domain identification runs with the friction feedforward bypassed
+  (`CL_VEL_CHIRP_DEPLOYED` / `CL_VEL_CHIRP_FF` / `CL_POS_CHIRP_DEPLOYED`): the Coulomb term
+  is a tanh of vel_cmd, so it flips sign at every velocity zero crossing and no amplitude
+  gives a linear Bode with it in the loop. The shipped loop keeps it, and is verified by
+  step response instead.
+
+- **Superseded by the above:** an earlier stage-attached fit of K = 1623.5 rad/s per A,
+  tau = 123.67 ms, and a "mechanical resonance at 65-90 Hz" read as a two-inertia
+  signature with amplitude-dependent frequency. Both came from the corrupted measurement
+  path. The re-measured plant is 9x different in both K and tau, and the earlier numbers
+  imply the stage *reduced* damping by 9x, which is backwards. Today's sweeps cover 65-90
+  Hz with coherence >= 0.99 and show nothing there, and a step response through a 86.9 Hz
+  crossover comes back with 0.4% overshoot and no ringing. `POSITION_LOOP_KP` had been
+  backed off to 200 to stay clear of that band; that constraint no longer applies.
+
 - A current-loop cross-coupling bias (`i_d` drifting with speed due to a missing d-axis
   PI) was root-caused and fixed. A persistent order-6 electrical / order-18 mechanical
   velocity ripple was characterized (real, not noise; best explanation by elimination is
   cogging torque) but not independently confirmed — a zero-current coast test to isolate
-  it was tried and abandoned (too much bench friction to coast usefully). The mechanical
-  resonance above is a separate, later finding — not yet connected to the ripple
-  investigation, though both point at unmodeled mechanical/friction behavior worth
-  revisiting together.
-- SPI telemetry to the Pi was redesigned to remove an entire class of ISR-priority bug: the
-  TX DMA is now free-running CIRC over a single live buffer that the control loop writes
-  unconditionally every tick — no CS-triggered rearm, no dependency on any ISR's latency or
-  priority. This is what lets the control loop sit at **unconditional highest NVIC
-  priority** with nothing else ever needing to preempt it. See [SPI Link](#spi-link-current).
+  it was tried and abandoned (too much bench friction to coast usefully). That ripple work
+  also predates the measurement-path fixes and is worth re-checking.
+- SPI telemetry to the Pi uses a free-running CIRC TX DMA with no CS-triggered rearm, so
+  the control loop stays at **unconditional highest NVIC priority** with nothing needing to
+  preempt it. The control loop now writes that buffer **only while the bus is idle** (NSS
+  high) and the frame leads with constant fields, because the SPI keeps a byte fetched
+  ahead: writing unconditionally every tick is what tore every frame. The Pi recovers frame
+  alignment by clocking single filler bytes until the CRC checks out — a lost clock edge
+  used to desync the stream permanently, which is what captures dying partway through and
+  never recovering actually were. See [SPI Link](#spi-link-current).
 - The Pi-streamed-trajectory loop and the full drive state machine (`drive.c`:
   IDLE/OPEN_LOOP/ALIGN/SERVO_ON/FAULT) are designed and scaffolded but **not yet wired into
   the running firmware** — see [State Machines](#state-machines) below. All loop-closure
   work above runs from the system-ID harness (`sysid/foc_sysid.c`), reusing the same
-  cascade `RUN_MODE_CLOSED_LOOP` will eventually run. Next hardware steps: check the stage
-  coupling for backlash (the suspected source of the amplitude-dependent resonance above),
-  add velocity feedforward, then build the trajectory-streaming motion controller
-  (trapezoidal velocity profiles) on top.
+  cascade `RUN_MODE_CLOSED_LOOP` will eventually run. Next hardware steps: merge the
+  trajectory-streaming branch (`MoveCmd`, `trap_gen.c`, position-loop velocity
+  feedforward) onto this one and run a profile streamed from the Pi.
+
+  Known open: two identical loaded velocity sweeps disagreed on the backed-out K by 2.3x
+  (177 vs 76), so something mechanical varies run to run and is not yet explained. The SPI
+  link also tears frames at higher motor current — recoverable now, but the coupling path
+  is unfixed.
 
 ## Overview
 
@@ -335,7 +383,7 @@ SYSID_STAGE_ALIGN → SYSID_STAGE_RUN → SYSID_STAGE_IDLE
 
 The active test is selected at compile time via `SYSID_TEST` in `config.h` — options span
 open-loop current chirp/step, closed-velocity-loop chirp/step, a constant-iq ripple-debug
-mode, closed-position-loop step and chirp (whole-system, for the 21.5 Hz BW / 82.8° PM
+mode, closed-position-loop step and chirp (whole-system, for the 53.5 Hz BW / 60.2° PM
 result above), and a slow "cine sweep" variant of the position chirp sized for filming
 (visible 3-80 Hz sweep instead of the analysis range) rather than measurement.
 
@@ -444,21 +492,22 @@ referenced by the currently-inactive `drive.c`/ring-buffer path).
 
 1. Rotor lock / alignment — **done**
 2. Open-loop electrical spin / encoder polarity check — **done**
-3. Closed-loop current validation — **done**, gains from measured system ID (re-identified
-   again this session, BW target bumped 500→1000Hz), d-axis cross-coupling PI added
-4. Closed-loop velocity — **done**, re-identified with a real stage attached (previous
-   82.5 Hz bare-motor result superseded — the plant changed substantially with load); a real
-   order-6 electrical velocity ripple was characterized (likely cogging) but not
-   independently root-caused, and a separate mechanical resonance (65-90Hz, amplitude-
-   dependent, likely coupling backlash) was found via closed-loop chirp — see
+3. Closed-loop current validation — **done**, gains from measured system ID; d-axis
+   cross-coupling PI added. Re-verified 2026-09-19 after the ADC-sampling and telemetry
+   fixes: crossover 256 Hz, PM 88.6°, matching the design's 248 Hz / 85-88°
+4. Closed-loop velocity — **done**, stage attached, re-identified 2026-09-19 on the
+   verified measurement path with the friction feedforward bypassed: K = 177.2 rad/s per A,
+   τ = 14.19 ms; loop at 86.9 Hz crossover, 66.4° PM. An order-6 electrical velocity ripple
+   was characterized earlier (likely cogging) but not independently root-caused, and
+   predates the measurement fixes
+5. Closed-loop position, via the sysid harness — **done**, `POSITION_LOOP_KP=260`. Measured
+   directly on the whole closed system (`SYSID_TEST_CL_POS_CHIRP`, not inferred): 40.4 Hz
+   crossover, 60.2° phase margin, 12.2 dB gain margin, 53.5 Hz closed-loop bandwidth; 1 rad
+   step in 15 ms with 0.4% overshoot. The earlier back-off to `POSITION_LOOP_KP=200` was to
+   avoid a 65-90 Hz resonance that the verified path does not reproduce — see
    [Status](#status)
-5. Closed-loop position, via the sysid harness — **done**, deliberately backed off from a
-   phase-margin-targeted design (crossover was landing right against the resonance above) to
-   a conservative `POSITION_LOOP_KP=200`. Measured directly on the whole closed system
-   (`SYSID_TEST_CL_POS_CHIRP`, not inferred): 21.5 Hz closed-loop bandwidth, 82.8° phase
-   margin, 18.6 dB gain margin
 6. Closed-loop position via Pi-streamed trajectories (`RUN_MODE_CLOSED_LOOP`, trapezoidal
-   velocity profiles) — **not started**; next steps are checking the stage coupling for
-   backlash and adding velocity feedforward before building this
+   velocity profiles) — **not started**; next step is merging the trajectory-streaming
+   branch onto `jz-dev` and running a profile from the Pi's `move_cmd.txt`
 
 <!-- Images pending: MCU/board photos, pinout reference to be added by user -->
