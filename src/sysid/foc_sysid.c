@@ -943,10 +943,19 @@ static void run_cl_vel_chirp(void)
             }
         }
 
-        // PI + friction feedforward, now centralized in loops.c
-        // (velocity_loop_step) so this sysid test and real trajectory mode
-        // share the same friction compensation instead of duplicating it.
-        iq_cmd = velocity_loop_step(vel_cmd_rad_sec, vel_meas_rad, DT_VELOCITY);
+        // pi_step directly, NOT velocity_loop_step: the friction feedforward
+        // in loops.c adds Coulomb + viscous terms driven by vel_cmd, which is
+        // a feedforward path from the reference straight to the plant input.
+        // That makes C(s) != VEL_KP_TEST and breaks this test's whole point --
+        // the plant back-out P(s) = L(s)/VEL_KP_TEST assumes the controller is
+        // that constant. Measured 2026-09-19 with the feedforward left in:
+        // closed-loop DC gain +1.47dB (impossible for P-only, since H(0) =
+        // KpK/(1+KpK) < 1), vel_meas/vel_cmd a flat 1.18 at every frequency,
+        // and a backed-out K of -229 rad/s per A -- the sign flip is just
+        // 1-H going negative. At 0.6Hz the measured iq_cmd peak was 0.105A
+        // against a 0.094A Coulomb term, i.e. the feedforward was supplying
+        // essentially all of the current and the P term almost none.
+        iq_cmd = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
     }
 
     foc_vd_applied = pi_step(&d_current_loop, 0.0f - i_d_meas, SYSID_DT);
