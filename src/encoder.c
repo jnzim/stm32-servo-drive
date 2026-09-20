@@ -41,7 +41,16 @@ static int32_t last_position = 0;
 // SYSID_TEST_CL_VEL_CHIRP (phase crossover/GM shouldn't collapse back
 // toward the original problem) and SYSID_TEST_POSITION_STEP (does the
 // buzz actually drop) before locking in.
-#define VEL_FILTER_N  40   // 2 ms window
+// 2026-09-19: back to N=20. With the load attached and Kp_pos=260 (gc 32.5Hz,
+// PM 47.4deg), the phase this filter costs matters again. Backing the plant out
+// of the measured loop (P = L/C) showed phase passing -90deg -- -88.7 at 50Hz,
+// -136.6 at 120Hz -- which a single-pole plant cannot do; the 2ms window's 1ms
+// group delay (0.36 deg/Hz, ~14deg at the 40Hz velocity crossover) accounts for
+// most of it, and for the ~1dB of extra magnitude droop above 10Hz.
+//
+// The noise trade that drove 40 is real: re-check SYSID_TEST_POSITION_STEP for
+// the buzz-at-rest that N=20 caused last time, now that the loop gains differ.
+#define VEL_FILTER_N  20   // 1 ms window
                            // resolution: 1 count/ms = 0.767 rad/s
                            // at 10 rad/s -> approximately 13 counts/ms
 

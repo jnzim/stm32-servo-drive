@@ -29,9 +29,24 @@
 // ~300Hz dynamics, single-pole plant model being incomplete). PM<90deg is
 // exactly why measured BW (80.4Hz) exceeds gc (44.6Hz) -- mild peaking
 // near crossover, not an error. Healthy margins either way.
-#define VEL_KP              0.02053f   // A / (rad/s)
-#define VEL_KI              1.6505f    // A / rad
-#define VEL_IQ_LIMIT        0.5f
+// 2026-09-19, loaded machine, measured with VEL_FILTER_N=20:
+//   Kp 0.02053 -> 0.0450 (2.2x), crossover 40Hz -> ~93Hz, PM 97.6deg -> ~70deg.
+//   The old gain left the velocity loop crossing over at only 1.2x the position
+//   loop's 32.5Hz -- the usual guideline is 3-5x, and that phase shortfall is
+//   what capped the position loop at 47deg PM. Ki scales with Kp to keep the PI
+//   zero on the measured 11.2Hz plant pole: Ki = Kp * 2*pi*11.2.
+#define VEL_KP              0.04500f   // A / (rad/s)
+#define VEL_KI              3.1700f    // A / rad -- PI zero on the LOADED plant pole
+                                       // (2026-09-19): Ki = Kp * 2*pi*11.2Hz. The old 1.6505 put
+                                       // the zero at 12.8Hz against a pole measured at 11.2Hz, and
+                                       // the leftover pole-zero pair showed as a ~1dB shelf from
+                                       // 10Hz out to crossover in the closed-loop magnitude.
+// 1.5A, raised from the 0.5A bring-up placeholder (2026-09-19). With the load
+// attached, 0.5A clamped the velocity PI for ~20% of a position chirp (iq peak
+// 0.709A -- the friction feedforward is added after this clamp, so it is not
+// the ceiling it looks like), which saturated the measurement: crossover read
+// 25.9Hz / PM 48.9deg against a 33.8Hz / 60deg design. Motor is rated 2.91A.
+#define VEL_IQ_LIMIT        1.5f
 
 
 // ── Reset after each move ─────────────────────────────────────────────────────

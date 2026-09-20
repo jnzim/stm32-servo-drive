@@ -906,7 +906,11 @@ static void run_cl_vel_chirp(void)
                 // CL_VEL_CHIRP_PONLY_KP in config.h for why. velocity_loop is
                 // a shared global (loops.c); loops_reset() puts the real
                 // VEL_KP/VEL_KI back at the next ALIGN->RUN transition.
+#if CL_VEL_CHIRP_DEPLOYED
+                /* deployed VEL_KP/VEL_KI already installed by loops_reset() */
+#else
                 pi_init(&velocity_loop, CL_VEL_CHIRP_PONLY_KP, 0.0f, -0.5f, 0.5f);
+#endif
             }
 
             vel_cmd_rad_sec = 0.0f;
@@ -955,7 +959,17 @@ static void run_cl_vel_chirp(void)
         // 1-H going negative. At 0.6Hz the measured iq_cmd peak was 0.105A
         // against a 0.094A Coulomb term, i.e. the feedforward was supplying
         // essentially all of the current and the P term almost none.
+#if CL_VEL_CHIRP_DEPLOYED
+  #if CL_VEL_CHIRP_FF
+        iq_cmd = velocity_loop_step(vel_cmd_rad_sec, vel_meas_rad, DT_VELOCITY);
+  #else
+        /* deployed VEL_KP/VEL_KI, friction feedforward off -- what the
+         * position loop actually runs on. See CL_VEL_CHIRP_FF. */
         iq_cmd = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
+  #endif
+#else
+        iq_cmd = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
+#endif
     }
 
     foc_vd_applied = pi_step(&d_current_loop, 0.0f - i_d_meas, SYSID_DT);
@@ -1172,7 +1186,12 @@ static void run_cl_pos_chirp(void)
         // velocity_loop_step(), not a raw pi_step() -- POSITION_LOOP_KP was
         // sized against the feedforward-compensated H(s), so verifying it
         // needs the same feedforward active underneath, not the bare PI.
+#if CL_POS_CHIRP_DEPLOYED
         iq_cmd = velocity_loop_step(vel_cmd_rad_sec, vel_meas_rad, DT_VELOCITY);
+#else
+        /* friction feedforward bypassed -- see CL_POS_CHIRP_DEPLOYED */
+        iq_cmd = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
+#endif
     }
 
     // ── Current loop — 20 kHz ────────────────────────────────────────────────

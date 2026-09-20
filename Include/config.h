@@ -27,7 +27,7 @@
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_BREAKAWAY                13
 
-#define SYSID_TEST SYSID_TEST_CL_VEL_CHIRP
+#define SYSID_TEST SYSID_TEST_POSITION_STEP
 
 // SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
 // window (real operating condition, includes any switching-induced ripple).
@@ -287,7 +287,7 @@
 #define CL_VEL_CHIRP_F_START     0.5f
 #define CL_VEL_CHIRP_F_END     200.0f
 #define CL_VEL_CHIRP_DURATION   60.0f
-#define CL_VEL_CHIRP_AMPLITUDE  15.0f     // rad/s -- re-testing the 8 vs 15 comparison with
+#define CL_VEL_CHIRP_AMPLITUDE  15.0f     // rad/s
                                           // friction feedforward now active (FRICTION_FF_*
                                           // below); this run is the amplitude=15 half
 
@@ -302,6 +302,24 @@
 // exists to raise CL_VEL_CHIRP_AMPLITUDE later if the stage's response is
 // too small to fit well.
 #define CL_VEL_CHIRP_PONLY_KP    0.0239f
+
+// CL_VEL_CHIRP_DEPLOYED -- which controller the velocity chirp runs.
+//   0 = identification: P-only (CL_VEL_CHIRP_PONLY_KP), friction feedforward
+//       bypassed, so C(s) really is that constant and the plant back-out
+//       P(s) = L(s)/Kp is valid. Use this to measure the plant.
+//   1 = verification: the deployed VEL_KP/VEL_KI PI *and* the friction
+//       feedforward, i.e. exactly what real trajectory mode runs. Use this to
+//       check the shipped loop. The back-out is meaningless here (C(s) is a
+//       PI plus a reference feedforward path) -- read H(s) only.
+#define CL_VEL_CHIRP_DEPLOYED    1
+
+// CL_VEL_CHIRP_FF -- friction feedforward on top of the controller
+// CL_VEL_CHIRP_DEPLOYED selects. Only meaningful when DEPLOYED=1; the P-only
+// identification path never had it. DEPLOYED=1 + FF=0 is the configuration the
+// position loop actually sits on, and measured that way on 2026-09-19 the
+// inner loop peaks +10.8dB at 32Hz -- invisible in the P-only identification
+// runs, which are flat there.
+#define CL_VEL_CHIRP_FF          0
 
 // Friction feedforward -- Fc/Fv from the repeated SYSID_TEST_FRICTION_SWEEP
 // runs (stage attached, averaged across 3 clean runs: Fc~94mA, Fv~1.9mA per
@@ -513,7 +531,9 @@
 // the stage-attached + feedforward system (bare-motor precedent above found
 // the predicted crossover landed within 5% once closed-loop verified --
 // worth repeating that check here before trusting this number blindly).
-#define POSITION_LOOP_KP        100.0f   // (rad/s) per rad of position error -- backed off from 205.5
+#define POSITION_LOOP_KP        260.0f   // (rad/s) per rad -- 60deg-PM design against the LOADED velocity loop
+                                         // (crossover 33.8Hz, H=-1.76dB there), measured 2026-09-19 on the
+                                         // verified path. Previous 100 came from pre-fix captures.
                                           // (measured 39deg PM, short of 60deg target) to restore margin.
                                           // Closed-loop verified: gc=18.91Hz, PM=70.6deg, GM=22.0dB,
                                           // whole-system BW=31.6Hz (SYSID_TEST_CL_POS_CHIRP)
@@ -546,7 +566,17 @@
 #define CL_POS_CHIRP_F_START     0.1f     // Hz
 #define CL_POS_CHIRP_F_END     150.0f     // Hz
 #define CL_POS_CHIRP_DURATION   60.0f     // s
-#define CL_POS_CHIRP_AMPLITUDE   0.3f   // rad
+// CL_POS_CHIRP_DEPLOYED -- which inner velocity loop the position chirp runs.
+//   0 = identification: PI only, friction feedforward bypassed. The Coulomb
+//       term is 0.094*tanh(vel_cmd/2.0), which flips sign at every velocity
+//       zero crossing -- twice per cycle at every frequency in the sweep -- so
+//       with it in the loop no amplitude gives a linear Bode. Use this to
+//       measure the position loop's crossover and phase margin.
+//   1 = verification: velocity_loop_step(), i.e. exactly what ships. Read it
+//       in the time domain (step response), not as a Bode plot.
+#define CL_POS_CHIRP_DEPLOYED    0
+
+#define CL_POS_CHIRP_AMPLITUDE  0.25f   // rad -- 0.3 saturated VEL_IQ_LIMIT 20% of the run, 0.1 was too small to measure
 
 // =============================================================================
 // Cine sweep — same closed-loop position chirp, but sized for FILMING. Now
