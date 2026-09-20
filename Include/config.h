@@ -546,7 +546,8 @@
 // NOTE: cl_step_tick in run_position_step() increments inside the
 // position-loop-decimated block (1 kHz, POS_LOOP_DECIMATE=20), NOT the raw
 // 20kHz ISR tick -- so these counts are in 1kHz ticks, not 20kHz ticks.
-#define POSITION_STEP_AMPLITUDE_RAD  1.0f      // ~11.5 deg -- gentle first test
+#define POSITION_STEP_AMPLITUDE_RAD  0.1f      // ~5.7 deg -- small-signal: 0.1 rad x Kp_pos 260 = 26 rad/s commanded,
+                                                // under POSITION_VEL_LIMIT, so the step shows the loop rather than the clamp
 #define POSITION_STEP_SETTLE_TICKS   1000u     // 1s @ 1kHz
 #define POSITION_STEP_HOLD_TICKS     2000u     // 2s @ 1kHz
 
