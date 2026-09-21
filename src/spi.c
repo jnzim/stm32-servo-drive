@@ -28,7 +28,10 @@
 #include "spi.h"
 #include "board_f411.h"
 #include "protocol.h"
+#include "config.h"
 #include "stm32f4xx.h"
+#include "foc_trajectory.h"
+#include "drive.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -59,13 +62,34 @@ volatile uint16_t expected_samples = 0;
  * SPI DMA buffers
  * =============================================================================*/
 
-static volatile uint8_t spi2_rx_buf[SPI2_TRANSACTION_BYTES];
+/*
+ * Double-buffered (DMA DBM) RX -- fixes a single-buffer race: with one
+ * buffer, DMA can start overwriting spi2_rx_buf with the *next* transaction
+ * while DMA1_Stream3_IRQHandler is still reading the frame that just
+ * completed, tearing it mid-read with no way to detect the tear (unlike
+ * TX, where a torn frame is caught by the Pi's own CRC check once the
+ * whole frame -- crc16 included -- has been read). DBM lets DMA fill the
+ * *other* buffer while software reads the one that just completed; CT
+ * (current-target) tells the IRQ which buffer that is (see
+ * DMA1_Stream3_IRQHandler below).
+ */
+static volatile uint8_t spi2_rx_buf[2][SPI2_TRANSACTION_BYTES];
 
 /*
  * Single live TX buffer -- see file header. CIRC DMA reads it
  * continuously; the control loop writes it in place, unconditionally.
  */
 static SysIdSample spi_tx_buf;
+
+/*
+ * Real TelemetryFrame TX buffer, used under RUN_MODE_CLOSED_LOOP instead of
+ * spi_tx_buf -- see spi_init()'s DMA1_Stream4 setup and spi_update_telem()
+ * below. SysID mode is untouched: it keeps sending SysIdSample exactly as
+ * before, this buffer doesn't exist for it.
+ */
+#if RUN_MODE != RUN_MODE_SYSID
+static TelemetryFrame telem_tx_buf;
+#endif
 
 
 /* =============================================================================
@@ -231,6 +255,7 @@ void spi_init(void)
 
     spi2_dma_clear_flags();
 
+#if RUN_MODE == RUN_MODE_SYSID
     /* Boot sample — flags=0x1234 marks pre-TIM1 data */
     spi_sysid_update_latest(100, 200, 300,
                             400, 500,
@@ -238,18 +263,33 @@ void spi_init(void)
                             800,
                             2048, 2050, 2046,
                             0x1234, 0);
+#else
+    /* Boot sample -- drive_state=DRIVE_IDLE (0), everything else zero, so
+     * the Pi sees a valid, CRC-correct frame from the very first read
+     * instead of uninitialized memory before the control loop writes
+     * anything real. */
+    {
+        TelemetryFrame boot_frame = {0};
+        spi_update_telem(&boot_frame);
+    }
+#endif
 
     /*
-     * RX DMA: Pi MOSI -> SPI2->DR -> spi2_rx_buf
-     * CIRC — just counts transactions.
+     * RX DMA: Pi MOSI -> SPI2->DR -> spi2_rx_buf[0/1]
+     * CIRC + DBM (double buffer mode) -- see spi2_rx_buf's comment. DMA
+     * fills M0AR first (CT starts at 0), then ping-pongs to M1AR and back
+     * automatically at each transfer complete; software never touches
+     * M0AR/M1AR again after this setup.
      */
     DMA1_Stream3->PAR  = (uint32_t)&SPI2->DR;
-    DMA1_Stream3->M0AR = (uint32_t)spi2_rx_buf;
+    DMA1_Stream3->M0AR = (uint32_t)spi2_rx_buf[0];
+    DMA1_Stream3->M1AR = (uint32_t)spi2_rx_buf[1];
     DMA1_Stream3->NDTR = SPI2_TRANSACTION_BYTES;
     DMA1_Stream3->CR   =
         (0u << DMA_SxCR_CHSEL_Pos) |
         DMA_SxCR_MINC              |
         DMA_SxCR_CIRC              |
+        DMA_SxCR_DBM               |
         DMA_SxCR_TCIE;
 
     DMA1_Stream3->CR |= DMA_SxCR_EN;
@@ -268,7 +308,11 @@ void spi_init(void)
      * and why it's the Pi's job (CRC-based resync) to handle, not an ISR's.
      */
     DMA1_Stream4->PAR  = (uint32_t)&SPI2->DR;
+#if RUN_MODE == RUN_MODE_SYSID
     DMA1_Stream4->M0AR = (uint32_t)&spi_tx_buf;
+#else
+    DMA1_Stream4->M0AR = (uint32_t)&telem_tx_buf;
+#endif
     DMA1_Stream4->NDTR = SPI2_TRANSACTION_BYTES;
     DMA1_Stream4->CR =
         (0u << DMA_SxCR_CHSEL_Pos) |
@@ -303,13 +347,20 @@ void spi_init(void)
 
 
 /* =============================================================================
- * Legacy telemetry API — kept for link compatibility
+ * TelemetryFrame update -- RUN_MODE_CLOSED_LOOP's equivalent of
+ * spi_sysid_update_latest() above. Same idiom: single live buffer, written
+ * unconditionally, crc16 computed last, __DMB() orders the writes so DMA
+ * (or a racing read) can't see a partial update.
  * =============================================================================*/
 
+#if RUN_MODE != RUN_MODE_SYSID
 void spi_update_telem(const TelemetryFrame *frame)
 {
-    (void)frame;
+    telem_tx_buf         = *frame;
+    telem_tx_buf.crc16   = crc16_calc((const uint8_t *)&telem_tx_buf, TELEM_CRC_LEN);
+    __DMB();
 }
+#endif
 
 
 /* =============================================================================
@@ -329,6 +380,32 @@ void DMA1_Stream3_IRQHandler(void)
                   DMA_LIFCR_CFEIF3;
 
     cnt_telem++;
+
+    // CT reflects the buffer DMA just switched *to* (i.e. the one it's
+    // about to fill next) -- hardware flips it right at this transfer-
+    // complete event, before this IRQ runs. So the frame that just
+    // finished filling is the *other* buffer, safe to read now: DMA won't
+    // touch it again until the next full ping-pong cycle.
+    uint32_t ct            = (DMA1_Stream3->CR & DMA_SxCR_CT) ? 1u : 0u;
+    uint32_t completed_idx = 1u - ct;
+    const uint8_t *frame   = (const uint8_t *)spi2_rx_buf[completed_idx];
+
+    if (frame[0] == SPI2_OP_MOVE_CMD)
+    {
+        MoveCmd cmd;
+        memcpy(&cmd, frame, sizeof(cmd));
+
+        uint16_t calc = crc16_calc((const uint8_t *)&cmd, MOVE_CMD_CRC_LEN);
+        if (calc == cmd.crc16)
+        {
+            foc_trajectory_start_move(cmd.target_pos, cmd.vel_max, cmd.accel_max);
+            drive_request_servo_on();
+        }
+        else
+        {
+            cnt_error++;
+        }
+    }
 }
 
 

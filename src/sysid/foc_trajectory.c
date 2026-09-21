@@ -21,9 +21,16 @@
 #include "current_feedback.h"
 #include "pwm.h"
 #include "loops.h"
+#include "trap_gen.h"
+#include "drive.h" // drive_is_servo_on() / drive_get_state()
+#include "spi.h"   // spi_update_telem()
 
 #include <math.h>
 #include <stdint.h>
+
+// Defined in main.c, incremented by SysTick -- no shared header for this
+// one global yet, declared here the same way it already is in main.c.
+extern volatile uint32_t tick_ms;
 
 // =============================================================================
 // Alignment stage
@@ -39,12 +46,22 @@ static TrajStage traj_stage      = TRAJ_STAGE_ALIGN;
 static uint32_t  traj_align_tick = 0;
 static int32_t   traj_enc_offset = 0;
 
+// The move generator, and a latch for a move requested before RUN begins
+// (e.g. boot scaffolding firing immediately, well before ALIGN finishes) --
+// see foc_trajectory_start_move()/foc_trajectory_position_tick() below.
+static TrapGen  g_move;
+static bool     g_move_pending   = false;
+static int32_t  g_move_target    = 0;
+static int32_t  g_move_vel_max   = 0;
+static int32_t  g_move_accel_max = 0;
+
 // =============================================================================
 // Applied voltage — written each ISR, exposed for telemetry in SysTick
 // =============================================================================
 
 float foc_vq_applied = 0.0f;
 float foc_vd_applied = 0.0f;
+float foc_iq_meas     = 0.0f;  // real i_q feedback, exposed for telemetry in SysTick
 
 // =============================================================================
 // foc_theta_from_encoder — electrical angle relative to alignment offset
@@ -91,6 +108,9 @@ void foc_trajectory_step(void)
         // ---------------------------------------------------------------------
         case TRAJ_STAGE_RUN:
         {
+            if (!drive_is_servo_on())
+                return;
+
             if (!first_sample_ready)
                 return;
 
@@ -100,8 +120,8 @@ void foc_trajectory_step(void)
             float theta = foc_theta_from_encoder();
 
             // ── Current feedback ─────────────────────────────────────────────
-            float i_d_meas, i_q_meas;
-            current_feedback_get_dq(theta, &i_d_meas, &i_q_meas);
+            float i_d_meas;
+            current_feedback_get_dq(theta, &i_d_meas, &foc_iq_meas);
 
             // ── Velocity loop @ 5 kHz ────────────────────────────────────────
             if (++vel_div >= 4u)
@@ -114,12 +134,115 @@ void foc_trajectory_step(void)
             // ── Current loop @ 20 kHz ────────────────────────────────────────
             foc_vd_applied = 0.0f;
             foc_vq_applied = pi_step(&current_loop,
-                                     iq_cmd - i_q_meas,
+                                     iq_cmd - foc_iq_meas,
                                      DT_CURRENT);
             pwm_apply_dq(foc_vd_applied, foc_vq_applied, theta);
         }
         break;
     }
+}
+
+// =============================================================================
+// foc_trajectory_position_tick — call from SysTick at 1 kHz, SERVO_ON only
+//
+// M1 (trajectory-streaming plan): fake hardcoded ramp+hold trajectory, no
+// ring buffer yet -- proves the position-loop-in-SysTick plumbing in
+// isolation before the real transport (ring buffer, then SPI RX) is
+// trusted. Target/rate deliberately small and slow -- comparable to
+// SYSID_TEST_POSITION_STEP's own amplitude (POSITION_STEP_AMPLITUDE_RAD),
+// not exploring new dynamic territory while also exercising brand-new code.
+//
+// Gated on traj_stage == TRAJ_STAGE_RUN, not just drive_is_servo_on(): boot
+// scaffolding (main.c) requests SERVO_ON immediately at boot, but
+// foc_trajectory_step()'s own ALIGN stage still holds for ALIGN_TICKS
+// (100000 @ 20kHz = 5s) before traj_enc_offset is captured and the
+// current/velocity loop actually goes live. Starting the generator before
+// that would have the move complete (or sit mid-move) against a dead loop,
+// so a pending move waits here for RUN before trap_gen_start() runs.
+// =============================================================================
+
+void foc_trajectory_position_tick(void)
+{
+    int32_t pos_cmd_counts   = (int32_t)lroundf(g_move.pos);
+    float   vel_cmd_counts_s = 0.0f;
+
+    // Only actually run the generator/position loop while servo is on and
+    // past ALIGN -- but telemetry below is reported every tick regardless,
+    // so drive_state always reflects reality. Previously this whole
+    // function (including the telemetry write) was skipped once
+    // drive_is_servo_on() went false, which meant the tick that flips
+    // drive_state to IDLE never got reported -- the Pi saw the last
+    // SERVO_ON frame forever and never observed completion.
+    if (drive_is_servo_on() && traj_stage == TRAJ_STAGE_RUN)
+    {
+        if (g_move_pending)
+        {
+            // g_move_target is a delta from wherever the stage actually is
+            // right now, not an absolute position -- resolved here, at the
+            // moment the move actually starts (traj_enc_offset is only
+            // valid once ALIGN has finished, which is why this waits for
+            // TRAJ_STAGE_RUN rather than resolving it back when the
+            // command was first received).
+            int32_t start_pos      = encoder_get_position() - traj_enc_offset;
+            int32_t absolute_target = start_pos + g_move_target;
+            trap_gen_start(&g_move, start_pos, absolute_target, g_move_vel_max, g_move_accel_max);
+            g_move_pending = false;
+        }
+
+        trap_gen_step(&g_move, DT_POSITION, &pos_cmd_counts, &vel_cmd_counts_s);
+        float pos_cmd_rad = (float)pos_cmd_counts / COUNTS_PER_RAD;
+
+        int32_t raw          = encoder_get_position() - traj_enc_offset;
+        float   pos_meas_rad = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
+
+        // p_step() has no built-in output clamp (unlike pi_step()'s
+        // PIState) -- manual clamp, same idiom as foc_sysid.c's
+        // run_position_step(). Pure position feedback for now -- no
+        // velocity feedforward from the generator's own vel_cmd_counts_s
+        // yet, that's its own later step.
+        float v = p_step(&position_loop, pos_cmd_rad - pos_meas_rad);
+        if (v >  POSITION_VEL_LIMIT) v =  POSITION_VEL_LIMIT;
+        if (v < -POSITION_VEL_LIMIT) v = -POSITION_VEL_LIMIT;
+        vel_cmd_rad_sec = v;
+
+        samples_consumed++;
+        first_sample_ready = 1;
+    }
+
+    // Real telemetry, every tick, regardless of drive state -- named
+    // fields, no relabeling. iq_cmd/foc_iq_meas are already in amps
+    // (current-loop domain); TelemetryFrame reports both in mA.
+    int32_t pos_fbk = encoder_get_position() - traj_enc_offset;
+    TelemetryFrame frame = {
+        .pos_cmd          = pos_cmd_counts,
+        .pos_fbk          = pos_fbk,
+        .vel_cmd          = (int32_t)lroundf(vel_cmd_counts_s),
+        .vel_fbk          = encoder_get_velocity(),
+        .timestamp_ms     = tick_ms,
+        .drive_state      = (uint8_t)drive_get_state(),
+        .fault_flags      = 0,
+        .samples_consumed = samples_consumed,
+        .iq_cmd           = (int16_t)lroundf(iq_cmd * 1000.0f),      // A -> mA
+        .i_q_fbk          = (int16_t)lroundf(foc_iq_meas * 1000.0f), // A -> mA
+    };
+    spi_update_telem(&frame);
+}
+
+// =============================================================================
+// foc_trajectory_start_move / foc_trajectory_move_active — see header.
+// =============================================================================
+
+void foc_trajectory_start_move(int32_t target_pos, int32_t vel_max, int32_t accel_max)
+{
+    g_move_target    = target_pos;
+    g_move_vel_max   = vel_max;
+    g_move_accel_max = accel_max;
+    g_move_pending   = true;
+}
+
+bool foc_trajectory_move_active(void)
+{
+    return g_move_pending || trap_gen_active(&g_move);
 }
 
 // =============================================================================
