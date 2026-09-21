@@ -197,10 +197,24 @@ void foc_trajectory_position_tick(void)
 
         // p_step() has no built-in output clamp (unlike pi_step()'s
         // PIState) -- manual clamp, same idiom as foc_sysid.c's
-        // run_position_step(). Pure position feedback for now -- no
-        // velocity feedforward from the generator's own vel_cmd_counts_s
-        // yet, that's its own later step.
-        float v = p_step(&position_loop, pos_cmd_rad - pos_meas_rad);
+        // run_position_step().
+        //
+        // Velocity feedforward: the generator already knows what velocity it
+        // is asking for, so hand that to the velocity loop directly and leave
+        // the position loop to correct only what is left over.
+        //
+        // Without it this is pure position feedback, and cruise following
+        // error is then exactly v/Kp. Measured 2026-09-20, 10mm at 10mm/s:
+        // 157.2 counts (38.4um) of lag, backing out Kv=260.6 1/s against
+        // POSITION_LOOP_KP=260.0 -- 0.2% agreement, which is what a type-1
+        // loop with no feedforward has to do.
+        //
+        // The clamp applies to the TOTAL command, not just the correction: at
+        // 10mm/s the feedforward term alone is 31.4 rad/s of the 50 rad/s
+        // POSITION_VEL_LIMIT, so the correction has ~19 rad/s of headroom
+        // before the clamp starts eating it.
+        float v = (vel_cmd_counts_s / COUNTS_PER_RAD)
+                + p_step(&position_loop, pos_cmd_rad - pos_meas_rad);
         if (v >  POSITION_VEL_LIMIT) v =  POSITION_VEL_LIMIT;
         if (v < -POSITION_VEL_LIMIT) v = -POSITION_VEL_LIMIT;
         vel_cmd_rad_sec = v;

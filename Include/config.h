@@ -6,9 +6,14 @@
 
 #define RUN_MODE_SYSID        0
 #define RUN_MODE_CLOSED_LOOP  1
-// M1 bench test (trajectory-streaming plan): fake trajectory through the
-// real position loop via the new SysTick handler, zero SPI/ring involved.
-// Revert to RUN_MODE_SYSID once this milestone is done.
+// Closed loop is the normal mode now: MoveCmd over SPI, trapezoidal profile
+// generated on the STM (trap_gen.c), TelemetryFrame back to the Pi.
+//
+// This is a COMPILE-TIME switch, not a runtime one -- main.c and spi.c pick
+// either foc_sysid_step + SysIdSample or foc_trajectory_step + TelemetryFrame,
+// never both. So running any SYSID_TEST again means setting this back to
+// RUN_MODE_SYSID and reflashing. Every identification run behind the numbers
+// in this file was taken that way.
 #define RUN_MODE              RUN_MODE_CLOSED_LOOP
 
 // =============================================================================
