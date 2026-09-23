@@ -127,7 +127,22 @@
 // moves the +-(V_BUS/2) saturation clamp (loops.c pi_init calls) and the PWM
 // normalization range (pwm.c), both already written generically off this
 // constant.
-#define V_BUS   12.0f
+// 2026-09-22: 12V -> 24V. Not for more torque -- to stop the current loop's
+// PI output clamping at +-V_BUS/2 during the high end of a chirp. Measured at
+// 12V: vq reached 6000mV peak (exactly the clamp) by ~1.25kHz, so the loop was
+// voltage-starved and the closed-loop magnitude could not be read up there.
+// 0.8A through |Z| = sqrt(R^2 + (wL)^2) with R=1.45 L=1.29mH needs ~9.8V peak
+// at 1.5kHz; +-12V covers it, +-8V (16V bus) would still clip the last third.
+//
+// The "16V gives no usable SPI at all" note below is not evidence any more --
+// it was taken with the STM<->DRV logic ground missing (fixed 2026-09-22, see
+// the chirp-amplitude commit). Re-check torn frames on the first run at 24V
+// rather than assuming either way.
+//
+// THE PSU MUST ACTUALLY BE AT 24V. This constant sets the PI clamp (loops.c
+// pi_init) and the PWM normalization range (pwm.c); if the supply is still at
+// 12V the firmware will command twice the voltage it delivers.
+#define V_BUS   24.0f
 
 // =============================================================================
 // Current sensing
@@ -190,22 +205,41 @@
 // Ld ~= Lq for this machine (see loops.c).
 // =============================================================================
 
-// 2026-09-22: 4x the proven pair (2.07/2450). Both scaled by the same factor,
-// so the zero stays exactly where it was (Ki/Kp = 1184, ratio 1.053 against
-// the R/L fit above) and only crossover moves: ~255Hz -> ~1020Hz. Predicted
-// PM ~63 deg, the loss being the ~75us computational+ZOH delay at 20kHz
-// (360*fc*75us = 27 deg at 1kHz).
+// Current loop, designed 2026-09-22 against a measured plant.
 //
-// This gain range was tried and reverted before ("1000Hz bump Kp=4.43/
-// Ki=5184", continuous idle buzz, vq +-2-3V, iq_meas +-400-800mA at rest).
-// Re-trying because that verdict rested on measurements taken with the
-// STM<->DRV logic ground missing and the ADC IIR still in the loop, when the
-// apparent current noise floor was 52-55mA. It is now 8.1mA measured
-// (SHUNT_NOISE, 2026-09-22), so Kp*noise into the voltage command drops from
-// ~420mV to ~65mV at this Kp. Revert pair if the buzz is still there: 2.07 /
-// 2450.
-#define CURRENT_LOOP_KP  8.28f      // V/A
-#define CURRENT_LOOP_KI  9800.0f    // V/(A*s)
+// CROSSOVER, not bandwidth. Kp = 2*pi*fc*L places gc (where |L(jw)| = 1).
+// The closed-loop -3dB point lands ~1.5-1.9x above gc for this damping --
+// measured 855Hz for a 500Hz design, ratio 1.71. The two are different
+// numbers and confusing them is what made a correctly-behaving loop look
+// broken for most of a session. Any "BW" claim in this file means -3dB;
+// any design formula below sets gc.
+//
+// Plant, from a closed-loop 0.8A chirp (constant current across the sweep,
+// so it is well conditioned at every frequency). Solving
+// |Z|^2 = R^2 + (2*pi*f*L)^2 per frequency bin gives L flat to +-0.8% from
+// 91Hz to 977Hz -- a clean first-order RL, no eddy-current or iron-loss
+// frequency dependence:
+//     R = 1.73 ohm, L = 1.05 mH, R/L = 1648 rad/s = 262Hz
+//
+// Design for gc = 500Hz:
+//     Kp = 2*pi*gc*L = 2*pi*500*0.00105 = 3.30 V/A
+//     Ki = 2*pi*gc*R = 2*pi*500*1.73    = 5435 V/(A*s)
+//     Ki/Kp = 1648 = R/L, so the zero cancels the pole and L(s) -> wc/s.
+// Verified live: |C| = vq/err settles at 3.56 against Kp 3.30 (the excess is
+// residual integrator), and |L| computes to 1.05 at 500Hz -- crossover is
+// within 5% of design.
+//
+// Do NOT fit the plant from the OPEN-loop chirp. It drives a constant 1.0V,
+// so current collapses to ~130mA by 1kHz where dead-time error is a large
+// fraction of the command; that inflates L (it read 1.22mH vs 1.05mH here)
+// and puts the zero below the real pole, leaving an uncancelled
+// second-order-with-a-zero response that rolls off too shallow to read.
+//
+// Previous pair, run for months: Kp=2.07 / Ki=2450, which is gc ~250Hz and
+// therefore ~420Hz -3dB. Still a fine configuration; this one is simply
+// faster and now has a measured plant behind it.
+#define CURRENT_LOOP_KP  3.30f      // V/A
+#define CURRENT_LOOP_KI  5435.0f    // V/(A*s)
 
 // =============================================================================
 // FOC bring-up voltages
@@ -229,7 +263,7 @@
 
 #define SYSID_AMPLITUDE  1.0f
 #define SYSID_F_START    1.0f
-#define SYSID_F_END      2000.0f
+#define SYSID_F_END      1000.0f   /* was 2000: at 5kHz telemetry that is 2.5 samples/cycle. 1000Hz gives 5/cycle, and the R/L fit only needs to reach well past the ~180-280Hz pole */
 #define SYSID_DURATION   20.0f
 #define SYSID_DT         DT_CURRENT
 
@@ -456,7 +490,11 @@
 // =============================================================================
 
 #define CL_CURRENT_CHIRP_F_START        1.0f
-#define CL_CURRENT_CHIRP_F_END        900.0f   /* capped below the 1kHz Nyquist of the 2kHz telemetry frame rate */
+#define CL_CURRENT_CHIRP_F_END       1000.0f   /* 5kHz telemetry -> 10 samples/cycle at 500Hz, 5 at 1kHz.
+                                                 * Sweeping to 1.5-2kHz gives 2.5-3.4 samples/cycle, where
+                                                 * every derived figure this session (a 1267Hz single-pole
+                                                 * fit, a +1.14dB peak, a +95deg phase LEAD) turned out to be
+                                                 * sampling artifact. Raise this only with the telemetry rate. */
 #define CL_CURRENT_CHIRP_DURATION      40.0f
 #define CL_CURRENT_CHIRP_AMPLITUDE     0.8f    // A -- 0.4A was the clean ceiling before the 2026-09-22 grounding change (STM<->DRV logic GND added, PSU-common->breadboard jumper removed); 0.8f is the test of that change, baseline to beat 74.7% torn / 506 fps
 #define CL_CURRENT_CHIRP_SETTLE_TICKS  20u
