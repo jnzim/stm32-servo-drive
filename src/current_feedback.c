@@ -32,6 +32,7 @@
 //   On STM32F4/F411, JEOC is bit 2 = 0x04.
 
 #include "current_feedback.h"
+#include "isr_timing.h"
 #include "board_f411.h"
 #include "clock.h"
 #include "stm32f4xx.h"
@@ -104,7 +105,7 @@ void ADC_IRQHandler(void)
 {
     if (ADC1->SR & ADC_SR_JEOC_BIT)
     {
-        GPIOC->BSRR = (1u << 4);            /* PC4 high — sample point */
+        ISR_TIME_BEGIN(ISR_T_ADC, ISR_PIN_ADC);   /* PC4 high — sample point */
 
         /* Recursive IIR blend y = (y + x)/2 -- fires ONCE per period (measured
          * 2026-09-19), so this is a 1-pole low-pass in the current feedback
@@ -118,7 +119,7 @@ void ADC_IRQHandler(void)
         current_sample_valid = true;
         current_sample_count++;
 
-        GPIOC->BSRR = (1u << (4 + 16));     /* PC4 low */
+        ISR_TIME_END(ISR_T_ADC, ISR_PIN_ADC);     /* PC4 low */
     }
 }
 

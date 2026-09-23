@@ -19,6 +19,7 @@
 #include "current_feedback.h"
 #include "foc_sysid.h"
 #include "foc_trajectory.h"
+#include "isr_timing.h"
 
 volatile uint32_t tick_ms          = 0;
 volatile bool     system_initialized = false;
@@ -49,6 +50,8 @@ void TIM1_UP_TIM10_IRQHandler(void)
     if (!system_initialized)
         return;
 
+    ISR_TIME_BEGIN(ISR_T_TIM1, ISR_PIN_TIM1);
+
     encoder_update(tick_ms);
 
 #if RUN_MODE == RUN_MODE_SYSID
@@ -56,6 +59,8 @@ void TIM1_UP_TIM10_IRQHandler(void)
 #else
     foc_trajectory_step();
 #endif
+
+    ISR_TIME_END(ISR_T_TIM1, ISR_PIN_TIM1);
 }
 
 int main(void)
@@ -101,6 +106,8 @@ int main(void)
     // but not until after this wait loop, so it can't be relied on here.
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
     (void)RCC->AHB1ENR;
+
+    isr_timing_init();
 
     GPIOC->MODER &= ~(3u << (3u * 2u));
     GPIOC->PUPDR &= ~(3u << (3u * 2u));

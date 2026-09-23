@@ -26,6 +26,7 @@
 // tool (foc-sysid, rpi5), not in this repo.
 
 #include "spi.h"
+#include "isr_timing.h"
 #include "board_f411.h"
 #include "protocol.h"
 #include "stm32f4xx.h"
@@ -322,6 +323,8 @@ void DMA1_Stream3_IRQHandler(void)
         return;
     }
 
+    ISR_TIME_BEGIN(ISR_T_DMA3, ISR_PIN_DMA3);
+
     DMA1->LIFCR = DMA_LIFCR_CTCIF3  |
                   DMA_LIFCR_CHTIF3  |
                   DMA_LIFCR_CTEIF3  |
@@ -329,6 +332,8 @@ void DMA1_Stream3_IRQHandler(void)
                   DMA_LIFCR_CFEIF3;
 
     cnt_telem++;
+
+    ISR_TIME_END(ISR_T_DMA3, ISR_PIN_DMA3);
 }
 
 
@@ -348,6 +353,11 @@ void DMA1_Stream3_IRQHandler(void)
 void EXTI15_10_IRQHandler(void)
 {
     if (!(EXTI->PR & (1u << PIN_RPI_NSS))) return;
+
+    ISR_TIME_BEGIN(ISR_T_EXTI, ISR_PIN_EXTI);
+
     EXTI->PR = (1u << PIN_RPI_NSS);
     cnt_cs++;
+
+    ISR_TIME_END(ISR_T_EXTI, ISR_PIN_EXTI);
 }
