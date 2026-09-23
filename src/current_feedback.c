@@ -107,12 +107,18 @@ void ADC_IRQHandler(void)
     {
         ISR_TIME_BEGIN(ISR_T_ADC, ISR_PIN_ADC);   /* PC4 high — sample point */
 
-        /* Recursive IIR blend y = (y + x)/2 -- fires ONCE per period (measured
-         * 2026-09-19), so this is a 1-pole low-pass in the current feedback
-         * path, not a 2-sample average. */
-        current_adc_raw[0] = (uint16_t)((current_adc_raw[0] + ADC1->JDR1) / 2u);
-        current_adc_raw[1] = (uint16_t)((current_adc_raw[1] + ADC1->JDR2) / 2u);
-        current_adc_raw[2] = (uint16_t)((current_adc_raw[2] + ADC1->JDR3) / 2u);
+        /* Raw reads. This used to be current_adc_raw[n] = (current_adc_raw[n]
+         * + JDRn)/2, written as a 2-sample average -- but the injected
+         * sequence fires once per period (measured 2026-09-19), so it was
+         * blending with its own previous output: a 1-pole IIR at fc ~2.3kHz
+         * costing ~4.5 deg at the 251Hz current-loop crossover, inside the
+         * loop, by accident. Removed 2026-09-22. Noise floor without it,
+         * after the STM<->DRV logic ground fix: ia/ib std 8.1/8.5 mA over
+         * 9840 samples of SHUNT_NOISE, i.e. 2.8 LSB -- quantization-limited,
+         * so the filter was buying nothing that mattered. */
+        current_adc_raw[0] = (uint16_t)ADC1->JDR1;
+        current_adc_raw[1] = (uint16_t)ADC1->JDR2;
+        current_adc_raw[2] = (uint16_t)ADC1->JDR3;
 
         ADC1->SR &= ~ADC_SR_JEOC_BIT;
 
