@@ -190,8 +190,22 @@
 // Ld ~= Lq for this machine (see loops.c).
 // =============================================================================
 
-#define CURRENT_LOOP_KP  2.07f      // V/A -- ~255Hz zero-cancellation vs R=1.45/L=1.29mH, proven quiet
-#define CURRENT_LOOP_KI  2450.0f    // V/(A*s)
+// 2026-09-22: 4x the proven pair (2.07/2450). Both scaled by the same factor,
+// so the zero stays exactly where it was (Ki/Kp = 1184, ratio 1.053 against
+// the R/L fit above) and only crossover moves: ~255Hz -> ~1020Hz. Predicted
+// PM ~63 deg, the loss being the ~75us computational+ZOH delay at 20kHz
+// (360*fc*75us = 27 deg at 1kHz).
+//
+// This gain range was tried and reverted before ("1000Hz bump Kp=4.43/
+// Ki=5184", continuous idle buzz, vq +-2-3V, iq_meas +-400-800mA at rest).
+// Re-trying because that verdict rested on measurements taken with the
+// STM<->DRV logic ground missing and the ADC IIR still in the loop, when the
+// apparent current noise floor was 52-55mA. It is now 8.1mA measured
+// (SHUNT_NOISE, 2026-09-22), so Kp*noise into the voltage command drops from
+// ~420mV to ~65mV at this Kp. Revert pair if the buzz is still there: 2.07 /
+// 2450.
+#define CURRENT_LOOP_KP  8.28f      // V/A
+#define CURRENT_LOOP_KI  9800.0f    // V/(A*s)
 
 // =============================================================================
 // FOC bring-up voltages
