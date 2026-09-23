@@ -27,7 +27,7 @@
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_BREAKAWAY                13
 
-#define SYSID_TEST SYSID_TEST_POSITION_STEP
+#define SYSID_TEST SYSID_TEST_CL_CURRENT_CHIRP
 
 // SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
 // window (real operating condition, includes any switching-induced ripple).
@@ -444,7 +444,7 @@
 #define CL_CURRENT_CHIRP_F_START        1.0f
 #define CL_CURRENT_CHIRP_F_END        900.0f   /* capped below the 1kHz Nyquist of the 2kHz telemetry frame rate */
 #define CL_CURRENT_CHIRP_DURATION      40.0f
-#define CL_CURRENT_CHIRP_AMPLITUDE     0.4f    // A -- 0.8A tears SPI frames (see ISSUES); 0.4A is the clean ceiling today
+#define CL_CURRENT_CHIRP_AMPLITUDE     0.8f    // A -- 0.4A was the clean ceiling before the 2026-09-22 grounding change (STM<->DRV logic GND added, PSU-common->breadboard jumper removed); 0.8f is the test of that change, baseline to beat 74.7% torn / 506 fps
 #define CL_CURRENT_CHIRP_SETTLE_TICKS  20u
 
 // =============================================================================
