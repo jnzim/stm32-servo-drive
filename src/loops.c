@@ -46,7 +46,7 @@
 // 0.709A -- the friction feedforward is added after this clamp, so it is not
 // the ceiling it looks like), which saturated the measurement: crossover read
 // 25.9Hz / PM 48.9deg against a 33.8Hz / 60deg design. Motor is rated 2.91A.
-#define VEL_IQ_LIMIT        1.5f
+#define VEL_IQ_LIMIT        2.0f
 
 
 // ── Reset after each move ─────────────────────────────────────────────────────
