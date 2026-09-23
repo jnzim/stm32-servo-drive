@@ -55,9 +55,9 @@
 #define PIN_DRV_CS       8   // PC8  
 
 // PWM TIM1, 3-PWM mode
-#define PIN_PWM_A        9   // PA8  / TIM1_CH1
-#define PIN_PWM_B        10   // PA9  / TIM1_CH2
-#define PIN_PWM_C        8  // PA10 / TIM1_CH3
+#define PIN_PWM_A        8   // PA8  / TIM1_CH1
+#define PIN_PWM_B        9   // PA9  / TIM1_CH2
+#define PIN_PWM_C        10  // PA10 / TIM1_CH3
 
 // Current feedback ADC
 #define PIN_CUR_A        0   // PC0 / ADC_IN10
