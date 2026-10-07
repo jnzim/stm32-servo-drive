@@ -548,34 +548,11 @@ Kp from the measured loop: gain for ~70&deg; PM, not from a bandwidth target</di
   <div><div class="cs-label">Phase margin</div><div class="cs-value">61.2&deg;</div></div>
   <div><div class="cs-label">Closed loop &minus;3dB</div><div class="cs-value">123.8 Hz<span style="font-size:11px;color:var(--ink-faint)"> &dagger;</span></div></div>
  </div>
- <p class="step-desc" style="font-size:13px;">&dagger; The &minus;3dB figure is not a property of this
- loop, and is quoted only with the conditions beside it: 0.10 rad drive, output clamp 80 rad/s, current
- clamp 3.5A. Measuring it took four sweeps and each one hit a different limiter &mdash; relieving one
- simply promotes the next.</p>
-
- <div class="card" style="margin-top:12px;">
- <table style="width:100%;border-collapse:collapse;font-size:13px;">
-  <tr style="color:var(--ink-dim);text-align:left;">
-   <th style="padding:4px 10px 4px 0;font-weight:500;">drive / clamps</th>
-   <th style="padding:4px 10px;font-weight:500;">gc</th>
-   <th style="padding:4px 10px;font-weight:500;">PM</th>
-   <th style="padding:4px 10px;font-weight:500;">&minus;3dB</th></tr>
-  <tr><td style="padding:3px 10px 3px 0;">0.15 rad, 50 rad/s, 2.0 A</td><td style="padding:3px 10px;">59.4 Hz</td><td style="padding:3px 10px;">60.5&deg;</td><td style="padding:3px 10px;">83.4 Hz</td></tr>
-  <tr><td style="padding:3px 10px 3px 0;">0.15 rad, 80 rad/s, 2.0 A</td><td style="padding:3px 10px;">61.8 Hz</td><td style="padding:3px 10px;">58.6&deg;</td><td style="padding:3px 10px;">86.6 Hz</td></tr>
-  <tr><td style="padding:3px 10px 3px 0;">0.15 rad, 80 rad/s, 3.5 A</td><td style="padding:3px 10px;">61.9 Hz</td><td style="padding:3px 10px;">60.7&deg;</td><td style="padding:3px 10px;">112.2 Hz</td></tr>
-  <tr style="color:var(--ink);font-weight:600;"><td style="padding:3px 10px 3px 0;">0.10 rad, 80 rad/s, 3.5 A</td><td style="padding:3px 10px;">61.2 Hz</td><td style="padding:3px 10px;">61.2&deg;</td><td style="padding:3px 10px;">123.8 Hz</td></tr>
- </table>
- </div>
-
- <p class="step-desc" style="font-size:13px;">Crossover and phase margin moved by under 4% across a 75%
- change in current limit and a 60% change in velocity limit. The &minus;3dB figure moved 48%, from
- relieving limiters alone. So the loop is quoted by gc and PM, with a step response beside them &mdash;
- the step never approaches a clamp (<code>vel_cmd</code> peaks 38 rad/s of 80), which makes it the one
- unconditionally honest measurement of speed here.</p>
-
- <p class="step-desc" style="font-size:13px;">The two agree, which is the useful part. Second-order theory
- puts 9% overshoot at 60&deg; of phase margin; the sweep measured 61.2&deg; from an entirely separate
- frequency-domain analysis.</p>
+ <p class="step-desc" style="font-size:13px;">&dagger; Measured at 0.10 rad drive, with the output
+ clamp at 80 rad/s and the current clamp at 3.5 A. The &minus;3dB figure depends on all three: drive the
+ loop harder and it saturates, and the number drops. Crossover and phase margin do not &mdash; they held
+ within 4% across a 75% change in current limit and a 60% change in velocity limit, which is why the loop
+ is quoted by those and by the step response, which never approaches a clamp.</p>
 
  <div class="chart-title">Closed loop verification, whole system: H<sub>pos</sub>(s) = pos<sub>meas</sub> / pos<sub>cmd</sub></div>
  <div id="chart-pos-cl"></div>
