@@ -20,6 +20,7 @@
 #include "foc_sysid.h"
 #include "foc_trajectory.h"
 #include "isr_timing.h"
+#include "observer.h"
 
 volatile uint32_t tick_ms          = 0;
 
@@ -148,6 +149,7 @@ int main(void)
         g_drv_nfault_pin_ok  = drv_status.n_fault_pin;
     }
 
+    observer_init();
     current_feedback_calibrate();
     pwm_enable();
 

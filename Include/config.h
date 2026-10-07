@@ -27,7 +27,7 @@
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_BREAKAWAY                13
 
-#define SYSID_TEST SYSID_TEST_CURRENT_LOOP_CHIRP
+#define SYSID_TEST SYSID_TEST_CL_VEL_CHIRP
 
 // SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
 // window (real operating condition, includes any switching-induced ripple).
@@ -221,7 +221,20 @@
 // frequency dependence:
 //     R = 1.73 ohm, L = 1.05 mH, R/L = 1648 rad/s = 262Hz
 //
-// Design for gc = 500Hz:
+// TRIAL 2026-10-06: gc = 1000Hz. Revert pair is 3.30 / 5435 (gc 500Hz),
+// which is the measured, verified configuration -- this one is not, because
+// 5kHz telemetry cannot verify it. A -3dB near 1.5kHz needs a sweep past it,
+// which is 3.3 samples/cycle, the regime where a 1267Hz fit, a +1.14dB peak
+// and a +95deg phase LEAD all turned out to be artifacts. What IS observable
+// without bandwidth: audible buzz at rest, iq noise at rest, and magnitude
+// roll-off up to ~1kHz. Treat any phase or gc number from this as suspect
+// until the TX ring lands and telemetry goes to 10kHz.
+//
+// Designed against L=1.04mH (back solved from the measured 504Hz crossover,
+// and agreeing with the datasheet 1.02 and the closed-loop fit 1.05) and
+// R=1.55 ohm (datasheet per-phase 1.555, open-loop fit 1.544).
+//
+// Original 500Hz design:
 //     Kp = 2*pi*gc*L = 2*pi*500*0.00105 = 3.30 V/A
 //     Ki = 2*pi*gc*R = 2*pi*500*1.73    = 5435 V/(A*s)
 //     Ki/Kp = 1648 = R/L, so the zero cancels the pole and L(s) -> wc/s.

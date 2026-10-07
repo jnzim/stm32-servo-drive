@@ -13,6 +13,7 @@
 
 #include "stm32f4xx.h"
 #include "foc_sysid.h"
+#include "observer.h"
 #include "config.h"
 #include "encoder.h"
 #include "current_feedback.h"
@@ -1565,6 +1566,14 @@ void foc_sysid_step(void)
 
     int32_t enc_pos = encoder_get_position();
 
+#if OBSERVER_ENABLE
+    /* Runs in parallel with the encoder boxcar -- the velocity loop still
+     * consumes encoder_get_velocity(). Both land in the same frame so one
+     * capture compares them directly, before anything in the control path
+     * changes. This is the common per-tick path for every SYSID_TEST. */
+    observer_update(enc_pos, i_q_meas);
+#endif
+
 #if SYSID_TEST == SYSID_TEST_CL_VEL_STEP
 
     /* Closed-loop velocity step:
@@ -1730,7 +1739,14 @@ void foc_sysid_step(void)
      * advances when that ISR actually fires, so a flat run of samples here
      * directly proves/disproves the stall instead of inferring it. */
     int16_t enc_hi_slot = (int16_t)(iq_cmd * 1000.0f);             /* iq_cmd   [mA]       */
-    int16_t enc_lo_slot = (int16_t)(current_feedback_sample_count() & 0xFFFFu); /* ADC IRQ counter */
+    /* enc_lo was the ADC injected-conversion counter, added to prove or
+     * disprove an ADC_IRQHandler stall during instability events. That
+     * question is closed (the stall was telemetry corruption from the missing
+     * STM<->DRV logic ground, fixed 2026-09-22), so the slot now carries the
+     * observer's velocity estimate -- deliberately scaled into the SAME units
+     * as the boxcar in last_slot, so the two columns can be differenced
+     * directly without rescaling on the Pi. */
+    int16_t enc_lo_slot = (int16_t)(observer_get_velocity() * COUNTS_PER_RAD / VEL_TELEM_DIV);
 #elif SYSID_TEST == SYSID_TEST_BREAKAWAY
     /* enc_hi repurposed to carry breakaway_phase (BreakawayPhase enum) so
      * the Pi-side script can segment ramp/handoff/settle without guessing
