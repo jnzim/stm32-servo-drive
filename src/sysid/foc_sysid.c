@@ -1726,7 +1726,7 @@ void foc_sysid_step(void)
      * P controller's output) and the raw measured velocity, same units/scale
      * SYSID_TEST_CL_VEL_STEP/CHIRP already use. */
 #if SYSID_TEST == SYSID_TEST_POSITION_STEP || SYSID_TEST == SYSID_TEST_CL_POS_CHIRP || SYSID_TEST == SYSID_TEST_CINE_SWEEP
-    int16_t enc_hi_slot = (int16_t)(vel_cmd_rad_sec * 1000.0f);   /* vel_cmd  [mrad/s]   */
+    int16_t enc_hi_slot = (int16_t)(vel_cmd_rad_sec * 1000.0f / VEL_CMD_TELEM_DIV); /* vel_cmd [mrad/s / VEL_CMD_TELEM_DIV] */
     int16_t enc_lo_slot = (int16_t)(vel_meas_counts / VEL_TELEM_DIV); /* vel_meas [counts/s / VEL_TELEM_DIV] */
 #elif SYSID_TEST == SYSID_TEST_CL_VEL_CHIRP
     /* enc_hi repurposed to carry the velocity controller's own output

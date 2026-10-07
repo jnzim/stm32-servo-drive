@@ -27,7 +27,7 @@
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_BREAKAWAY                13
 
-#define SYSID_TEST SYSID_TEST_CL_VEL_CHIRP
+#define SYSID_TEST SYSID_TEST_CL_POS_CHIRP
 
 // SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
 // window (real operating condition, includes any switching-induced ripple).
@@ -193,6 +193,16 @@
 // loop feedback stayed correct the whole time. /8 gives headroom to
 // ~201 rad/s before this cast wraps again.
 #define VEL_TELEM_DIV  8.0f
+
+// vel_cmd scaling for the POSITION tests' enc_hi slot. Logged as mrad/s it
+// railed: int16 tops out at 32.767 rad/s, while POSITION_VEL_LIMIT is 50 and
+// the position P output is Kp_pos * error -- at Kp_pos=380 an error of only
+// 0.13 rad already asks for 50 rad/s. The field silently clipped at +-32.77
+// and gave no hint that the loop was saturating. /4 gives +-131 rad/s of range
+// at 4 mrad/s resolution, so the clamp is visible before it is hit.
+// Velocity-loop tests keep the plain mrad/s scaling in sysid_f -- their
+// amplitude is 15 rad/s and never goes near the rail.
+#define VEL_CMD_TELEM_DIV  4.0f
 
 // =============================================================================
 // Current loop — zero-cancellation design, actually ~255Hz, not the 500Hz
@@ -615,7 +625,27 @@
 // the stage-attached + feedforward system (bare-motor precedent above found
 // the predicted crossover landed within 5% once closed-loop verified --
 // worth repeating that check here before trusting this number blindly).
-#define POSITION_LOOP_KP        260.0f   // (rad/s) per rad -- 60deg-PM design against the LOADED velocity loop
+// 2026-10-06: 260 -> 380, spending the margin the velocity observer freed up.
+//
+// The position loop is a pure integrator plus whatever the velocity loop lags,
+// so PM ~= 90deg - (velocity loop phase lag at gc). That holds to within half a
+// degree on the measured data: velocity lags 20deg at 41Hz, and the position
+// loop measured PM 70.4deg at gc 41.2Hz.
+//
+// Reading the target off the measured velocity phase:
+//     gc 56Hz -> 27.3deg lag -> PM ~63
+//     gc 60Hz -> ~29deg      -> PM ~61
+//     gc 80Hz -> 38.4deg     -> PM ~52
+// so 60Hz for a 60deg target, which is 260 * 60/41.2 = 380. Gain margin goes
+// 14.9 -> ~11.6dB.
+//
+// Where the 6.1deg came from: swapping the velocity loop's encoder boxcar for
+// the observer removed its group delay, which is lag the position loop was
+// paying for. At 41Hz that is ~4deg, and it grows with frequency -- 8.7deg at
+// 80Hz -- so the faster the position loop gets, the more the observer is worth.
+//
+// Revert pair: 260.0f, measured at gc 41.2Hz / PM 70.4deg / GM 14.9dB.
+#define POSITION_LOOP_KP        380.0f   // (rad/s) per rad -- 60deg-PM design against the LOADED velocity loop
                                          // (crossover 33.8Hz, H=-1.76dB there), measured 2026-09-19 on the
                                          // verified path. Previous 100 came from pre-fix captures.
                                           // (measured 39deg PM, short of 60deg target) to restore margin.
@@ -661,7 +691,14 @@
 //       in the time domain (step response), not as a Bode plot.
 #define CL_POS_CHIRP_DEPLOYED    0
 
-#define CL_POS_CHIRP_AMPLITUDE  0.25f   // rad -- 0.3 saturated VEL_IQ_LIMIT 20% of the run, 0.1 was too small to measure
+// 0.25 -> 0.15 rad (2026-10-06). 0.25 was chosen for Kp_pos=260; at 380 it
+// drives the loop into POSITION_VEL_LIMIT near and above crossover, where the
+// error approaches the full command amplitude and asks for ~95 rad/s against a
+// 50 rad/s clamp. A saturated loop measures as a describing function, not a
+// transfer function -- which is why 46% more gain produced only 6% more
+// crossover (41.2 -> 43.8Hz) and why the PM it reported is amplitude
+// dependent. iq also sat on the 2000mA VEL_IQ_LIMIT for 0.22% of samples.
+#define CL_POS_CHIRP_AMPLITUDE  0.15f   // rad -- 0.3 saturated VEL_IQ_LIMIT 20% of the run, 0.1 was too small to measure
 
 // =============================================================================
 // Cine sweep — same closed-loop position chirp, but sized for FILMING. Now
