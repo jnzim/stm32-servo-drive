@@ -581,12 +581,31 @@ Kp from the measured loop: gain for ~70&deg; PM, not from a bandwidth target</di
  text-transform:uppercase; color:var(--teal); font-weight:600; margin-bottom:8px;">Phase 2</div>
  <h3 style="font-size:27px; font-weight:700; margin:0 0 14px; letter-spacing:-0.01em; text-wrap:balance;">
  Motor Only Servo Drive Conclusion</h3>
- <p class="step-desc" style="margin-top:0;">The cascade behaves well: ~1% overshoot into a 2%
- settling band in ~36ms. The current loop runs at its 250Hz target gain, confirmed sufficient rather
- than assumed: pushing it to 500Hz and 1000Hz live on hardware left every outer loop's measured margin
- unchanged, while introducing real risk (audible noise, one genuine instability event) for no benefit,
- so the proven 250Hz target gain stays. The real ceiling on outer loop bandwidth is the backlash modulated
- mechanical resonance found near 65 to 90Hz, not current loop speed.</p>
+ <p class="step-desc" style="margin-top:0;">The cascade behaves well: 9% overshoot into a 2% settling
+ band in 11.8ms, from a 2.2ms rise. The current loop crosses over at 500Hz, the velocity loop at 117Hz
+ and the position loop at 61Hz, each with about 60 to 70&deg; of phase margin.</p>
+
+ <p class="step-desc">An earlier version of this page concluded the opposite about the current loop
+ &mdash; that raising it from 250Hz bought the outer loops nothing, at the cost of audible noise and one
+ instability event, so 250Hz should stay. That conclusion was wrong, and the reason is worth stating.
+ Every measurement behind it was taken over a telemetry link that was silently corrupting the current
+ signal: at 0.8A, 74.7% of frames were torn. The apparent current noise floor was 52 to 55mA; with the
+ link fixed it measures 8.1mA. The &ldquo;audible noise&rdquo; at high gain was real enough to hear, but
+ the data used to judge whether it bought anything was not trustworthy, and re-run on a working link the
+ higher gains are quiet.</p>
+
+ <p class="step-desc">The cause was a missing ground wire between the STM32 and the gate driver's logic
+ side. Their only shared return ran through the breadboard and across the Nucleo's ground plane, past the
+ ADC reference and the SPI pins.</p>
+
+ <p class="step-desc">What actually limited the outer loops was not a mechanical resonance and not the
+ current loop. It was the velocity estimate: a 20&ndash;tap moving average whose group delay costs
+ 0.36&deg; per Hz, so 31&deg; at the velocity loop's crossover against 6&deg; from the current loop.
+ Replacing it with a state observer returned that phase, and spending it on gain took the velocity loop
+ from 93 to 117Hz and the position loop from 41 to 61Hz at unchanged margin. Below that, the limits are
+ the output and current clamps rather than anything in the machine. A candidate mechanical feature near
+ 40Hz was tested by moving the load along the ballscrew, which changes the compliance: it did not move,
+ so it is not a load coupling resonance.</p>
  </div>
 </section>
 
