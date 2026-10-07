@@ -69,7 +69,30 @@
 // 0.709A -- the friction feedforward is added after this clamp, so it is not
 // the ceiling it looks like), which saturated the measurement: crossover read
 // 25.9Hz / PM 48.9deg against a 33.8Hz / 60deg design. Motor is rated 2.91A.
-#define VEL_IQ_LIMIT        2.0f
+// 2.0 -> 2.5 -> 3.5A (2026-10-06). 2.5 still clipped.
+//
+// 2.91A is the CONTINUOUS rating, which constrains RMS -- a thermal limit --
+// not transient peaks. Measured on the 0.15 rad CL_POS_CHIRP that was clipping:
+//
+//     iq RMS 0.734 A   peak 3.025 A   only 1.17% of samples above 2.4 A
+//
+// So RMS sits 4x under the continuous rating. 3.5A is 1.2x continuous for
+// peaks, against a servo motor's typical ~3x short-burst peak capability, and
+// is still inside the current-sense range (+-2048 counts at 2.88 mA/count
+// saturates near 5.9A, so the measurement stays honest).
+//
+// Check the bench supply allows it: 3.5A peaks at 24V.
+//
+// 2.0 was itself a bring-up value, not a thermal or hardware limit. It became
+// the binding constraint once POSITION_VEL_LIMIT went 50 -> 80: a 0.15 rad
+// CL_POS_CHIRP then hit vel_cmd's clamp 2.98% of samples AND iq's 2.71%, and
+// the measured bandwidth barely moved (83.4 -> 86.6Hz) while phase margin fell
+// to 58.6deg. Raising one clamp had just handed the bottleneck to the next one
+// down the chain.
+//
+// vq peaks 11711mV against its own 12000mV clamp with 0% of samples near it, so
+// the 24V bus is not the limit here.
+#define VEL_IQ_LIMIT        3.5f
 
 
 // ── Reset after each move ─────────────────────────────────────────────────────

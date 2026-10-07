@@ -651,7 +651,29 @@
                                           // (measured 39deg PM, short of 60deg target) to restore margin.
                                           // Closed-loop verified: gc=18.91Hz, PM=70.6deg, GM=22.0dB,
                                           // whole-system BW=31.6Hz (SYSID_TEST_CL_POS_CHIRP)
-#define POSITION_VEL_LIMIT      50.0f    // rad/s -- clamp P output, no windup state to clamp
+// 50 -> 80 rad/s (2026-10-06), about 15.9 -> 25.5 mm/s at the stage.
+//
+// 50 was not a motor or drive limit. It was set to stay below a sustained
+// 30-40Hz velocity oscillation found during trajectory cruise at ~25mm/s
+// (+-8mm/s swing, iq_cmd spiking in lockstep), confirmed by falsification not
+// to be a current-limit issue, and then deliberately not diagnosed.
+//
+// That characterisation was done on a velocity loop that no longer exists:
+// a 20-tap boxcar estimate at VEL_KP 0.045, gc ~40Hz. The leading unconfirmed
+// hypothesis was the filter's group delay, which is exactly what the observer
+// removed. Re-run on the current loop (CL_VEL_STEP at 80 rad/s, 0.25s cruise):
+//
+//     30-40Hz content   +-8 mm/s  ->  0.05-0.07 mm/s
+//
+// Over a hundredfold down -- the mode is still there but at noise level, not a
+// sustained swing. So the clamp was guarding against something that no longer
+// happens, while capping move speed and clamping the position loop's own
+// bandwidth measurement.
+//
+// 80 and not higher because 80 rad/s is exactly the speed verified clean. The
+// earlier oscillation hunt used 160; that is available once something has
+// actually been measured up there.
+#define POSITION_VEL_LIMIT      80.0f    // rad/s -- clamp P output, no windup state to clamp
 
 // =============================================================================
 // Position step test parameters
@@ -660,8 +682,12 @@
 // NOTE: cl_step_tick in run_position_step() increments inside the
 // position-loop-decimated block (1 kHz, POS_LOOP_DECIMATE=20), NOT the raw
 // 20kHz ISR tick -- so these counts are in 1kHz ticks, not 20kHz ticks.
-#define POSITION_STEP_AMPLITUDE_RAD  0.1f      // ~5.7 deg -- small-signal: 0.1 rad x Kp_pos 260 = 26 rad/s commanded,
-                                                // under POSITION_VEL_LIMIT, so the step shows the loop rather than the clamp
+#define POSITION_STEP_AMPLITUDE_RAD  0.1f      // ~5.7 deg -- small-signal: 0.1 rad x Kp_pos 380 = 38 rad/s commanded,
+                                                // under the 50 rad/s POSITION_VEL_LIMIT with 24% headroom, so the step
+                                                // shows the loop rather than the clamp. Re-check this product whenever
+                                                // Kp_pos moves: at 500 it would be 50 rad/s and the step would be
+                                                // measuring the limiter's slew rate instead (the same trap that made a
+                                                // 0.25 rad CL_POS_CHIRP read a 6% crossover rise from a 46% gain rise).
 #define POSITION_STEP_SETTLE_TICKS   1000u     // 1s @ 1kHz
 #define POSITION_STEP_HOLD_TICKS     2000u     // 2s @ 1kHz
 
@@ -698,7 +724,7 @@
 // transfer function -- which is why 46% more gain produced only 6% more
 // crossover (41.2 -> 43.8Hz) and why the PM it reported is amplitude
 // dependent. iq also sat on the 2000mA VEL_IQ_LIMIT for 0.22% of samples.
-#define CL_POS_CHIRP_AMPLITUDE  0.15f   // rad -- 0.3 saturated VEL_IQ_LIMIT 20% of the run, 0.1 was too small to measure
+#define CL_POS_CHIRP_AMPLITUDE  0.10f   // rad -- 0.3 saturated VEL_IQ_LIMIT 20% of the run, 0.1 was too small to measure
 
 // =============================================================================
 // Cine sweep — same closed-loop position chirp, but sized for FILMING. Now

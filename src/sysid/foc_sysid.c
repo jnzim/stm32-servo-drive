@@ -56,8 +56,22 @@ static float sysid_f            = SYSID_F_START;
 // =============================================================================
 
 #define CL_STEP_AMPLITUDE       0.3f        // A
-#define CL_STEP_VEL_AMPLITUDE   10.0       // rad/s
-#define CL_STEP_HOLD_TICKS      5000u       
+/* 10 -> 80 rad/s (2026-10-06), about 25mm/s at the stage. That is the regime
+ * where the trajectory work found a sustained 30-40Hz velocity oscillation
+ * during constant-velocity cruise (+-8mm/s swing, iq_cmd spiking in lockstep),
+ * confirmed by falsification NOT to be a current-limit issue. It was never
+ * diagnosed -- POSITION_VEL_LIMIT was set to 50 rad/s to stay under it.
+ *
+ * That characterisation was done on a velocity loop that no longer exists: a
+ * 20-tap boxcar estimate and VEL_KP 0.045, gc ~40Hz. It is now an observer at
+ * VEL_KP 0.090, gc 117Hz. The leading (unconfirmed) hypothesis at the time was
+ * the velocity filter's group delay, which is exactly what the observer
+ * removed. So this re-runs the original condition on the new loop. */
+#define CL_STEP_VEL_AMPLITUDE   80.0       // rad/s
+/* 5000 -> 1250 (0.25s at the 5kHz velocity-loop rate). At 80 rad/s a 1s hold
+ * travels 80 rad, about 25mm, before reversing; 0.25s keeps the excursion near
+ * 6.4mm while still covering 7-10 cycles of a 30-40Hz oscillation. */
+#define CL_STEP_HOLD_TICKS      1250u
 #define CL_STEP_SETTLE_TICKS    1000u     
 
 // Was 20000 (4.0s @ the 5kHz decimated vel-loop rate) for no real reason --
@@ -1578,10 +1592,21 @@ void foc_sysid_step(void)
 #if SYSID_TEST == SYSID_TEST_CL_VEL_STEP
 
     /* Closed-loop velocity step:
-     *   sysid_f slot -> velocity command [mrad/s]
+     *   sysid_f slot -> velocity command [mrad/s / VEL_CMD_TELEM_DIV]
      *   last slot    -> measured velocity [counts/s / VEL_TELEM_DIV]
+     *
+     * The command is scaled because this test alone runs fast enough to
+     * overflow the slot. Plain mrad/s in an int16 wraps above 32.767 rad/s:
+     * at the 80 rad/s used to look for the trajectory oscillation,
+     * (int16_t)(80.0 * 1000) = 80000 wrapped to 14464 and the field decoded
+     * as a confident, wrong 14.5 rad/s. vel_meas was fine -- it already had
+     * VEL_TELEM_DIV -- so only the command channel was blind.
+     *
+     * CL_VEL_CHIRP and FRICTION_SWEEP keep plain mrad/s: 15 rad/s and
+     * low-speed sweeps respectively, nowhere near the rail, and changing
+     * their scale would break every script that reads them.
      */
-    int16_t sysid_f_slot = (int16_t)(vel_cmd_rad_sec * 1000.0f);
+    int16_t sysid_f_slot = (int16_t)(vel_cmd_rad_sec * 1000.0f / VEL_CMD_TELEM_DIV);
     int16_t last_slot    = (int16_t)(vel_meas_counts / VEL_TELEM_DIV);
 
 #elif SYSID_TEST == SYSID_TEST_CL_VEL_CHIRP
