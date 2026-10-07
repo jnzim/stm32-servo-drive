@@ -49,10 +49,10 @@
 // it. Get K_ACC wrong and the estimate degrades toward what a plain tracking
 // observer gives; it does not diverge.
 
-// Enables the observer's own telemetry comparison. The velocity loop does NOT
-// consume omega_hat yet -- this runs in parallel with the boxcar so both can
-// be logged from one capture and compared directly, before anything in the
-// control path changes.
+// Runs the observer and logs it. Independent of whether the loop consumes it
+// (see VEL_LOOP_USES_OBSERVER below) -- with this on, the boxcar and the
+// observer are both in every frame, so one capture compares them whichever is
+// driving the loop.
 #define OBSERVER_ENABLE 1
 
 // Kt/J [rad/s^2 per A] -- acceleration per amp of q-axis current.
@@ -80,12 +80,38 @@
 
 // Observer bandwidth [Hz] -- the single tuning knob, placing all three poles
 // together. High: tracks the encoder hard and inherits its quantization noise.
-// Low: trusts the model, smooth but slow onto real disturbances. Wants to sit
-// well above the velocity loop's 95Hz crossover so the observer is not the
-// limiting dynamic, and well below where count quantization dominates.
-#define OBS_WO_HZ   300.0f
+// Low: trusts the model, smooth but slow onto real disturbances.
+//
+// 300 -> 800 (2026-10-06). The velocity loop caught up with the estimator. At
+// 2x velocity gains its crossover reached 170Hz, which is only 1.8x the 300Hz
+// observer -- the usual requirement is 3-5x, or the estimator's own dynamics
+// sit inside the loop's bandwidth and omega_hat stops tracking the real motion
+// where it matters. That showed up as a loop which looked excellent measured
+// through the observer (gc 170Hz, PM 103deg) while real motion, measured
+// through the encoder, got slightly WORSE than the boxcar baseline
+// (168.8 -> 148.3Hz). Regulating an estimate only works while the estimate is
+// right. 800Hz restores ~5x separation.
+//
+// The cost is inheriting more encoder quantization, which shows up as
+// roughness at low speed -- check POSITION_STEP for buzz at rest if this gets
+// raised further.
+#define OBS_WO_HZ   800.0f
+
+// Selects what the VELOCITY LOOP consumes. 0 = the encoder boxcar, i.e. the
+// long-standing behaviour. 1 = the observer.
+//
+// Telemetry is deliberately unaffected: vel_meas_counts keeps carrying the
+// boxcar, so a capture still logs both estimates side by side regardless of
+// which one is in the loop. That is what makes the A/B honest -- flipping this
+// changes the control path and nothing else.
+#define VEL_LOOP_USES_OBSERVER 1
 
 void  observer_init(void);
+
+// Velocity feedback [rad/s] for the loop, selected by VEL_LOOP_USES_OBSERVER.
+// Takes the boxcar's counts/s so the caller does not need to know which source
+// is live.
+float velocity_feedback_rad(int32_t boxcar_counts);
 
 // Call once per control tick from TIM1_UP, after encoder_update().
 //   counts  -- raw encoder position, same units as encoder_get_position()

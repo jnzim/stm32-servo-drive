@@ -35,8 +35,31 @@
 //   loop's 32.5Hz -- the usual guideline is 3-5x, and that phase shortfall is
 //   what capped the position loop at 47deg PM. Ki scales with Kp to keep the PI
 //   zero on the measured 11.2Hz plant pole: Ki = Kp * 2*pi*11.2.
-#define VEL_KP              0.04500f   // A / (rad/s)
-#define VEL_KI              3.1700f    // A / rad -- PI zero on the LOADED plant pole
+// 2026-10-06, velocity loop closed on the observer instead of the encoder
+// boxcar: Kp 0.0450 -> 0.0900, Ki 3.17 -> 6.34 (2x both, so the PI zero stays
+// on the 11.2Hz plant pole).
+//
+// The observer handed back +31 deg of phase margin at crossover -- the whole
+// group delay of the 20-tap boxcar (0.36 deg/Hz, 31 deg at 93Hz). Measured
+// through the signal each loop actually regulates:
+//
+//   loop on boxcar    gc  93.4Hz   PM 68.5 deg   -3dB 168.8Hz
+//   loop on observer  gc 104.1Hz   PM 99.5 deg   -3dB  86.1Hz
+//
+// Note the bandwidth DROPPED. With the gains unchanged, recovered phase does
+// not make the loop faster, it makes it overdamped -- at 99.5 deg PM the
+// closed-loop response is sluggish relative to its own crossover, which is why
+// -3dB fell below gc. Measured through the same boxcar sensor in both runs,
+// physical tracking went 168.8 -> 83.6Hz.
+//
+// So the margin is the deliverable and it was sitting unspent against a 60 deg
+// design target. 2x converts it: crossover scales with Kp, phase lag grows with
+// frequency, and PM should land back in the 60s with gc near 200Hz.
+//
+// Revert pair if this is too hot: 0.04500 / 3.1700, which is the configuration
+// measured above at PM 99.5 deg.
+#define VEL_KP              0.09000f   // A / (rad/s)
+#define VEL_KI              6.3400f    // A / rad -- PI zero on the LOADED plant pole
                                        // (2026-09-19): Ki = Kp * 2*pi*11.2Hz. The old 1.6505 put
                                        // the zero at 12.8Hz against a pole measured at 11.2Hz, and
                                        // the leftover pole-zero pair showed as a ~1dB shelf from

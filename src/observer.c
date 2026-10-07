@@ -14,7 +14,17 @@ static int32_t  counts_zero;    // encoder count at init
 static float    l1, l2, l3;
 static bool     primed;
 
-static const float TS = DT_CURRENT;   // 50us, the 20kHz control tick
+/* TIM1_UP is a hardware timer, so the control tick is exactly 50us with no
+ * jitter worth modelling. What is NOT guaranteed is that observer_update()
+ * runs on every one of them: it sits in the sysid telemetry section, and each
+ * run_* function returns early on !current_feedback_sample_valid() before
+ * reaching it. A skipped call with a hardcoded dt makes the model
+ * under-integrate, and on an integrator that accumulates. So take dt from the
+ * free-running tick counter instead of assuming consecutive calls. */
+extern volatile uint32_t g_control_tick;   /* main.c, 20kHz */
+
+static const float TICK_S = DT_CURRENT;    /* 50us per tick */
+static uint32_t    last_tick;
 
 void observer_init(void)
 {
@@ -28,6 +38,7 @@ void observer_init(void)
     l2 = 3.0f * wo * wo;
     l3 = wo * wo * wo;
 
+    last_tick   = 0u;
     theta_hat   = 0.0f;
     omega_hat   = 0.0f;
     dist_hat    = 0.0f;
@@ -44,11 +55,31 @@ void observer_update(int32_t counts, float iq_meas)
     if (!primed)
     {
         counts_zero = counts;
+        last_tick   = g_control_tick;
         primed      = true;
         return;
     }
 
+    const uint32_t now     = g_control_tick;
+    const uint32_t elapsed = now - last_tick;   /* unsigned: wrap-safe */
+    last_tick              = now;
+
+    if (elapsed == 0u) { return; }              /* called twice in one tick */
+
     const float theta_meas = (float)(counts - counts_zero) / COUNTS_PER_RAD;
+
+    /* A long gap is a stage change or a stall, not a sample interval. Don't
+     * integrate across it, and don't carry the stale position into the next
+     * update either -- theta_hat would be far from the encoder and the l*e
+     * correction would slam. Resync position to the measurement and keep the
+     * velocity and disturbance estimates, which are still the best available. */
+    if (elapsed > 20u)
+    {
+        theta_hat = theta_meas;
+        return;
+    }
+
+    const float TS = (float)elapsed * TICK_S;
     const float e          = theta_meas - theta_hat;
 
     /* Model acceleration: commanded torque less the viscous term the friction
@@ -72,3 +103,13 @@ void observer_update(int32_t counts, float iq_meas)
 float observer_get_velocity(void)    { return omega_hat; }
 float observer_get_position(void)    { return theta_hat; }
 float observer_get_disturbance(void) { return dist_hat;  }
+
+float velocity_feedback_rad(int32_t boxcar_counts)
+{
+#if VEL_LOOP_USES_OBSERVER
+    (void)boxcar_counts;
+    return omega_hat;
+#else
+    return (float)boxcar_counts / COUNTS_PER_RAD;
+#endif
+}

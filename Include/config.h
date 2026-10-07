@@ -162,7 +162,26 @@
 // =============================================================================
 
 #define DT_CURRENT   (1.0f / 20000.0f)
-#define DT_VELOCITY  (1.0f /  5000.0f)
+
+// The velocity loop runs every VEL_LOOP_DECIMATE-th control tick, and
+// DT_VELOCITY is derived from that rather than written independently -- they
+// used to be separate constants that could silently disagree, which would
+// scale the PI's integral term by whatever the mismatch was.
+//
+// Stays at 4 (5kHz). Tried 1 (20kHz) on 2026-10-06 and it bought nothing:
+//
+//   5kHz    gc 114.7Hz  PM 68.2 deg  -3dB 170.0Hz
+//   20kHz   gc 107.7Hz  PM 70.9 deg  -3dB 168.5Hz
+//
+// The reasoning for trying it was wrong. The decimation's ZOH acts on the iq
+// command going into an 855Hz current loop, which is ~0.5 sample = 100us = 4
+// deg at a 115Hz crossover -- not the 1.5 samples / 12.4 deg assumed. Four
+// degrees is inside run-to-run scatter (0.155 dB rms, measured). So it costs
+// 4x the velocity-loop CPU for no measurable phase, and TIM1_UP was already
+// at 37us of a 50us budget before the observer was added.
+#define VEL_LOOP_DECIMATE  4u
+#define DT_VELOCITY  (DT_CURRENT * (float)VEL_LOOP_DECIMATE)
+
 #define DT_POSITION  (1.0f /  1000.0f)
 
 // Telemetry-only scale factor for vel_meas_counts before it's narrowed to

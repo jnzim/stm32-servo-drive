@@ -428,7 +428,8 @@ static void run_cl_current_step(void)
 //                      Python: df["iq_cmd_mA"] * (2*pi / 8192)  → rad/s
 // =============================================================================
 
-#define VEL_LOOP_DECIMATE  4u   // 20 kHz / 4 = 5 kHz
+/* VEL_LOOP_DECIMATE and DT_VELOCITY both live in config.h now, derived from
+ * one another so they cannot disagree. */
 
 static uint32_t vel_loop_tick = 0;
 static void run_cl_vel_step(void)
@@ -447,7 +448,7 @@ static void run_cl_vel_step(void)
     {
         vel_loop_tick = 0;
 
-        float vel_meas_rad = vel_meas_counts * (FOC_TWO_PI / ENCODER_CPR);
+        float vel_meas_rad = velocity_feedback_rad(vel_meas_counts);
 
         switch (cl_step_phase)
         {
@@ -559,7 +560,7 @@ static void run_friction_sweep(void)
     {
         vel_loop_tick = 0;
 
-        float vel_meas_rad = vel_meas_counts * (FOC_TWO_PI / ENCODER_CPR);
+        float vel_meas_rad = velocity_feedback_rad(vel_meas_counts);
 
         // Hard position-limit backstop, independent of the hold-time
         // arithmetic sized in config.h -- see FRICTION_SWEEP_POS_LIMIT_MM.
@@ -713,15 +714,15 @@ static void run_breakaway(void)
     {
         vel_loop_tick = 0;
 
-        float vel_meas_rad = vel_meas_counts * (FOC_TWO_PI / ENCODER_CPR);
+        float vel_meas_rad = velocity_feedback_rad(vel_meas_counts);
         float disp_mm = (float)(encoder_get_position() - breakaway_start_pos) *
                          (STAGE_LEAD_MM_PER_REV / (float)ENCODER_CPR);
         bool  limit_hit = (fabsf(disp_mm) > BREAKAWAY_POS_LIMIT_MM);
 
-        // 5000.0f = 5kHz decimated rate (1/DT_VELOCITY) -- ramp reaches
+        // 1/DT_VELOCITY = the decimated velocity-loop rate -- ramp reaches
         // BREAKAWAY_IQ_CEILING after BREAKAWAY_RAMP_DURATION seconds if no
         // breakaway is detected first.
-        float ramp_step = BREAKAWAY_IQ_CEILING / (BREAKAWAY_RAMP_DURATION * 5000.0f);
+        float ramp_step = BREAKAWAY_IQ_CEILING / (BREAKAWAY_RAMP_DURATION / DT_VELOCITY);
 
         switch (breakaway_phase)
         {
@@ -897,7 +898,7 @@ static void run_cl_vel_chirp(void)
     {
         vel_loop_tick = 0;
 
-        float vel_meas_rad = vel_meas_counts * (FOC_TWO_PI / ENCODER_CPR);
+        float vel_meas_rad = velocity_feedback_rad(vel_meas_counts);
 
         if (vel_chirp_settle_tick < CL_VEL_CHIRP_SETTLE_TICKS)
         {
@@ -1085,7 +1086,7 @@ static void run_position_step(void)
     if (++vel_loop_tick >= VEL_LOOP_DECIMATE)
     {
         vel_loop_tick = 0;
-        float vel_meas_rad = vel_meas_counts * (FOC_TWO_PI / ENCODER_CPR);
+        float vel_meas_rad = velocity_feedback_rad(vel_meas_counts);
         // velocity_loop_step(), not a raw pi_step() -- same reason as
         // run_cl_pos_chirp(): POSITION_LOOP_KP was sized against the
         // feedforward-compensated system.
@@ -1183,7 +1184,7 @@ static void run_cl_pos_chirp(void)
     if (++vel_loop_tick >= VEL_LOOP_DECIMATE)
     {
         vel_loop_tick = 0;
-        float vel_meas_rad = vel_meas_counts * (FOC_TWO_PI / ENCODER_CPR);
+        float vel_meas_rad = velocity_feedback_rad(vel_meas_counts);
         // velocity_loop_step(), not a raw pi_step() -- POSITION_LOOP_KP was
         // sized against the feedforward-compensated H(s), so verifying it
         // needs the same feedforward active underneath, not the bare PI.
@@ -1279,7 +1280,7 @@ static void run_cine_sweep(void)
     if (++vel_loop_tick >= VEL_LOOP_DECIMATE)
     {
         vel_loop_tick = 0;
-        float vel_meas_rad = vel_meas_counts * (FOC_TWO_PI / ENCODER_CPR);
+        float vel_meas_rad = velocity_feedback_rad(vel_meas_counts);
         iq_cmd = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
     }
 

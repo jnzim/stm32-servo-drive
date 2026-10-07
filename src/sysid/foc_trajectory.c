@@ -16,6 +16,7 @@
 //   Ki = Kp × R/L       = 22306
 
 #include "foc_trajectory.h"
+#include "observer.h"
 #include "config.h"
 #include "encoder.h"
 #include "current_feedback.h"
@@ -107,7 +108,7 @@ void foc_trajectory_step(void)
             if (++vel_div >= 4u)
             {
                 vel_div = 0u;
-                float vel_fbk_rad = (float)encoder_get_velocity() / COUNTS_PER_RAD;
+                float vel_fbk_rad = velocity_feedback_rad(encoder_get_velocity());
                 iq_cmd = velocity_loop_step(vel_cmd_rad_sec, vel_fbk_rad, DT_VELOCITY);
             }
 
