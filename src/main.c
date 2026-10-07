@@ -22,6 +22,16 @@
 #include "isr_timing.h"
 
 volatile uint32_t tick_ms          = 0;
+
+// Free-running 20kHz control-tick counter. Stamped into every telemetry frame
+// as SysIdSample.t, which makes t an exact timestamp in 50us units rather than
+// a count of anything. It replaced a per-publish sequence counter: publishes
+// only happen on ticks where the Pi's NSS is idle, so that counter advanced at
+// ~10.7kHz on a 20kHz loop and consecutive frames were 1, 2 or 3 ticks apart
+// with no way to tell which. Every frequency axis in the project was being
+// built on either that or the Pi's arrival timestamp, neither of which is a
+// sample time. Wraps after ~59.6 hours.
+volatile uint32_t g_control_tick   = 0;
 volatile bool     system_initialized = false;
 
 // Captured first thing in main(), before anything else touches RCC.
@@ -51,6 +61,8 @@ void TIM1_UP_TIM10_IRQHandler(void)
         return;
 
     ISR_TIME_BEGIN(ISR_T_TIM1, ISR_PIN_TIM1);
+
+    g_control_tick++;
 
     encoder_update(tick_ms);
 

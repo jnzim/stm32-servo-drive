@@ -261,7 +261,7 @@
 // Current loop ID Sysid chirp parameters
 // =============================================================================
 
-#define SYSID_AMPLITUDE  1.0f
+#define SYSID_AMPLITUDE  2.0f
 #define SYSID_F_START    1.0f
 #define SYSID_F_END      1000.0f   /* was 2000: at 5kHz telemetry that is 2.5 samples/cycle. 1000Hz gives 5/cycle, and the R/L fit only needs to reach well past the ~180-280Hz pole */
 #define SYSID_DURATION   20.0f

@@ -73,7 +73,7 @@ static SysIdSample spi_tx_buf;
  * Sysid sequence
  * =============================================================================*/
 
-static volatile uint32_t sysid_seq = 0;
+extern volatile uint32_t g_control_tick;   /* main.c -- 20kHz, 50us per count */
 
 
 typedef char SysIdSample_must_be_32_bytes[
@@ -145,7 +145,7 @@ void spi_sysid_update_latest(int16_t ia_mA,
 
     SysIdSample *s = &spi_tx_buf;
 
-    s->t          = sysid_seq++;
+    s->t          = g_control_tick;   /* exact 50us timestamp, not a sequence */
     s->ia_mA      = ia_mA;
     s->ib_mA      = ib_mA;
     s->ic_mA      = ic_mA;
