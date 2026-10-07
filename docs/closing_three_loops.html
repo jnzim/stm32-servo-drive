@@ -675,6 +675,7 @@ Kp from the measured loop: gain for ~70&deg; PM, not from a bandwidth target</di
   <div><div class="cs-label">Coulomb F<sub>c</sub></div><div class="cs-value" style="color:var(--teal)">94.4 mA</div><div class="cs-label" style="margin-top:2px">0.060 N&middot;m</div></div>
   <div><div class="cs-label">Viscous F<sub>v</sub></div><div class="cs-value">2.04 mA&middot;s/rad</div><div class="cs-label" style="margin-top:2px">0.0012 N&middot;m&middot;s/rad</div></div>
   <div><div class="cs-label">Fit R&sup2;</div><div class="cs-value">0.913</div></div>
+  <div><div class="cs-label">Repeatability</div><div class="cs-value">&plusmn;5 mA</div></div>
   </div>
   <div class="chart-title">Steady state i<sub>q</sub> vs. commanded velocity, both directions</div>
   <div id="chart-friction"></div>
@@ -684,6 +685,25 @@ Kp from the measured loop: gain for ~70&deg; PM, not from a bandwidth target</di
   <span><span class="swatch" style="background:var(--amber)"></span>linear fit</span>
   </div>
  </div>
+ <p class="step-desc" style="margin-top:14px;font-size:13px;">Re measured after the grounding fix that
+ reshaped every other number on this page: F<sub>c</sub> 90.6 mA, F<sub>v</sub> 2.13 mA&middot;s/rad,
+ against the 94.4 and 2.04 above. Unchanged, within the repeatability &mdash; and that is the point. The
+ spread at each velocity hold is 55 to 87 mA against an 8.1 mA current noise floor, so it is cogging and
+ torque ripple, not measurement error. These constants were never noise limited, so cleaning up the
+ telemetry improved a precision that was not the binding constraint.</p>
+
+ <p class="step-desc" style="font-size:13px;">The &plusmn;5 mA figure is worth more than the numbers it
+ qualifies. Averaging within a single hold suggests &plusmn;1.5 mA, but that treats correlated variation as
+ independent samples &mdash; cogging is locked to rotor position and does not average down that way. The
+ honest figure comes from comparing the forward and reverse halves at matched speeds: 2.1 mA mean
+ difference, 5.2 mA standard deviation. Two features chased on the strength of the optimistic number
+ &mdash; a 28 mA step near 4&ndash;5 rad/s and an 8&ndash;10 mA zigzag at finer resolution &mdash; both
+ failed to reproduce between the halves.</p>
+
+ <p class="step-desc" style="font-size:13px;">That comparison also rules out position dependence: the
+ reverse half runs the same speeds at the far end of the travel (3 rad/s at 0.57 mm outbound, 16.04 mm
+ inbound) and agrees to within the same margin. Friction here is a function of speed, not of where the
+ stage sits on the screw.</p>
  </div>
 
  <div style="margin-top:32px;">
