@@ -27,7 +27,7 @@
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_BREAKAWAY                13
 
-#define SYSID_TEST SYSID_TEST_CL_POS_CHIRP
+#define SYSID_TEST SYSID_TEST_FRICTION_SWEEP
 
 // SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
 // window (real operating condition, includes any switching-induced ripple).
@@ -458,6 +458,32 @@
 // asymmetry between directions as a difference between the two sweep
 // halves instead of scrambling it step to step.
 // =============================================================================
+// Re-measured 2026-10-06 after the grounding fix, and the constants above are
+// LEFT ALONE deliberately. Full 1-23 rad/s sweep fits Fc=90.6mA /
+// Fv=2.133 mA per rad/s against the deployed 94.0 / 1.900 -- 4% and 12%, which
+// is inside what this measurement can distinguish.
+//
+// These were never noise-limited. The spread at each velocity point is 55-87mA
+// against an 8.1mA shunt noise floor, because it is cogging and torque ripple,
+// not measurement error.
+//
+// Two things worth knowing before re-running it:
+//
+//  - TRUE repeatability is +-5mA, not the +-1.5mA the within-hold standard
+//    error suggests. The SEM treats correlated variation inside one hold as
+//    independent samples; cogging is position-locked and does not average down
+//    that way. The honest figure comes from comparing the forward and reverse
+//    halves at matched speeds: mean difference 2.1mA, std 5.2mA.
+//
+//  - Do NOT fit Fv over a narrow velocity range. Over 3-7 rad/s it comes out
+//    3.40 mA per rad/s; over 1-23 it is 2.13. A four-unit lever arm cannot
+//    determine a slope against +-5mA of scatter.
+//
+// Also established: friction does not depend on position. The reverse half runs
+// the same speeds at the opposite end of the travel (v=3 at 0.57mm going out,
+// 16.04mm coming back) and agrees within the 2.1 +- 5.2mA above. An apparent
+// step at 4-5 rad/s in a coarse sweep, and a zigzag at 0.25 rad/s resolution,
+// both turned out to be scatter -- neither reproduced between the halves.
 #define FRICTION_SWEEP_V_MIN         1.0f    // rad/s
 #define FRICTION_SWEEP_V_MAX        23.0f    // rad/s
 #define FRICTION_SWEEP_V_STEP        1.0f    // rad/s
