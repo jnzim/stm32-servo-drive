@@ -58,18 +58,31 @@
 // Kt/J [rad/s^2 per A] -- acceleration per amp of q-axis current.
 //
 // Not measured directly. For a first-order mechanical plant w/i = K/(tau*s+1)
-// you have K = Kt/B and tau = J/B, so K/tau = Kt/J, and that RATIO is far
-// better conditioned than either parameter:
+// you have K = Kt/B and tau = J/B, so K/tau = Kt/J -- and that RATIO is far
+// better conditioned than either parameter. Two P-only identifications a month
+// apart:
 //
-//     backed out of CL_VEL_CHIRP 2026-10-06 : K=684.6, tau=34.5ms -> 19850
-//     loops.c loaded fit                    : K=242.4, tau=12.9ms -> 18760
-//     open-loop mechanical chirp            : K=58.0,  tau=4.1ms  -> 14140
+//     2026-09-19 : K=177.2, tau=14.19ms  ->  12488
+//     2026-10-06 : K= 79.25, tau= 6.66ms ->  11901
 //
-// K and tau disagree across those by up to 1000%; K/tau agrees to 6% between
-// the two loaded fits. 19800 is the starting value. A dedicated
-// accelerate-then-coast test would refine it (the sum of the accelerating and
-// coasting slopes cancels Coulomb friction exactly), but dist_hat absorbs the
-// error well enough that it is not a prerequisite.
+// K and tau differ by more than 2x between them; K/tau agrees to 5%.
+//
+// A properly identified value does NOT work here. 11900 comes from the only
+// valid back-out (DEPLOYED=0, where C(s) really is the constant the identity
+// assumes); 19800 came from a DEPLOYED=1 run, which config.h explicitly warns
+// is meaningless because C(s) is a PI plus a feedforward path. So the number in
+// use has an invalid derivation and the correct one is unusable: at 11900 the
+// velocity loop went unstable, swinging +-52 rad/s against a +-15 rad/s command
+// and driving the stage into its hard stops (2026-10-06).
+//
+// The mechanism is not understood. Naively a smaller model term should lean
+// the estimate harder on the encoder correction and behave more like the old
+// filter, not less stably.
+//
+// What it does establish: K_ACC is not just a model constant. The observer sits
+// inside the velocity feedback path, so this is a LOOP parameter and changing
+// it changes stability. Validate any change at small amplitude and short
+// duration with the stage centred, before a full sweep.
 #define OBS_K_ACC   19800.0f
 
 // Viscous damping as a current, straight from FRICTION_FF_VISCOUS_MA_PER_RADS
