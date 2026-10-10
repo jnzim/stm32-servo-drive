@@ -28,7 +28,7 @@
 #define SYSID_TEST_BREAKAWAY                13
 #define SYSID_TEST_CL_VEL_PLANT_CHIRP       14
 
-#define SYSID_TEST SYSID_TEST_CL_VEL_CHIRP
+#define SYSID_TEST SYSID_TEST_CL_VEL_PLANT_CHIRP
 
 // SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
 // window (real operating condition, includes any switching-induced ripple).
