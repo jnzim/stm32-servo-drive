@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "config.h"   /* FRICTION_FF_VISCOUS_MA_PER_RADS */
+
 // =============================================================================
 // Velocity observer -- a replacement for differentiating the encoder.
 // =============================================================================
@@ -30,20 +32,20 @@
 //
 //     theta_hat [rad]      estimated position
 //     omega_hat [rad/s]    estimated velocity   <- the useful output
-//     dist_hat  [rad/s^2]  estimated disturbance acceleration
+//     disturbance_hat  [rad/s^2]  estimated disturbance acceleration
 //
-// Update, with e = theta_meas - theta_hat:
+// Update, with pos_error = theta_meas - theta_hat:
 //
-//     theta_hat += Ts*( omega_hat                            + l1*e )
-//     omega_hat += Ts*( K_ACC*(iq - B_VISC*omega_hat) - dist_hat + l2*e )
-//     dist_hat  += Ts*(                                      - l3*e )
+//     theta_hat += Ts*( omega_hat                            + gain_pos*pos_error )
+//     omega_hat += Ts*( K_ACC*(iq - B_VISC*omega_hat) - disturbance_hat + gain_vel*pos_error )
+//     disturbance_hat  += Ts*(                                      - gain_dist*pos_error )
 //
 // Every term inside a bracket has the units of that state's derivative; that
-// is the check that the gains are dimensionally right. The l*e terms are
+// is the check that the gains are dimensionally right. The l*pos_error terms are
 // corrections injected as RATES, not writes to the state -- this is a control
 // loop whose plant is the model and whose setpoint is the sensor.
 //
-// dist_hat is the reason a wrong inertia is survivable. It is an integrator,
+// disturbance_hat is the reason a wrong inertia is survivable. It is an integrator,
 // so it converges onto whatever constant acceleration the model is missing --
 // Coulomb friction, load torque, or an error in K_ACC itself -- and cancels
 // it. Get K_ACC wrong and the estimate degrades toward what a plain tracking
@@ -85,11 +87,10 @@
 // duration with the stage centred, before a full sweep.
 #define OBS_K_ACC   19800.0f
 
-// Viscous damping as a current, straight from FRICTION_FF_VISCOUS_MA_PER_RADS
-// (1.9 mA per rad/s). Folding a known term into the model leaves dist_hat with
-// only Coulomb friction and genuine load disturbance to absorb, which makes it
-// a better estimate of both.
-#define OBS_B_VISC  0.0019f    // A per rad/s
+// Viscous damping as a current, derived from the friction sweep's own constant
+// rather than written out again -- it is the same physical quantity, and two
+// copies in different units is one edit away from disagreeing.
+#define OBS_B_VISC  (FRICTION_FF_VISCOUS_MA_PER_RADS * 0.001f)   // A per rad/s
 
 // Observer bandwidth [Hz] -- the single tuning knob, placing all three poles
 // together. High: tracks the encoder hard and inherits its quantization noise.
