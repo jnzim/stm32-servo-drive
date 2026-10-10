@@ -120,6 +120,10 @@
 // changes the control path and nothing else.
 #define VEL_LOOP_USES_OBSERVER 1
 
+#if VEL_LOOP_USES_OBSERVER && !OBSERVER_ENABLE
+#error "VEL_LOOP_USES_OBSERVER needs OBSERVER_ENABLE: the loop would read an omega_hat nothing updates"
+#endif
+
 void  observer_init(void);
 
 // Velocity feedback [rad/s] for the loop, selected by VEL_LOOP_USES_OBSERVER.

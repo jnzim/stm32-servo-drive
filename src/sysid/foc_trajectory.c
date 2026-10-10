@@ -104,6 +104,16 @@ void foc_trajectory_step(void)
             float i_d_meas, i_q_meas;
             current_feedback_get_dq(theta, &i_d_meas, &i_q_meas);
 
+            // ── Velocity observer @ 20 kHz ───────────────────────────────────
+            // velocity_feedback_rad() below returns the observer's omega_hat
+            // when VEL_LOOP_USES_OBSERVER=1, so the observer has to be
+            // advanced here, every tick, exactly as foc_sysid_step() does.
+            // Without this call omega_hat stays 0 and the velocity loop runs
+            // with no feedback at all.
+#if OBSERVER_ENABLE
+            observer_update(encoder_get_position(), i_q_meas);
+#endif
+
             // ── Velocity loop @ 5 kHz ────────────────────────────────────────
             if (++vel_div >= 4u)
             {
