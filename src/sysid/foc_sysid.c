@@ -897,7 +897,21 @@ static void run_breakaway(void)
 static float cl_vel_chirp_t         = 0.0f;
 static float cl_vel_chirp_angle_rad = 0.0f;
 
-static void run_cl_vel_chirp(void)
+// Which controller closes the velocity loop for the chirp. The test ID picks
+// one at dispatch, and telemetry carries the test ID, so every log records
+// which controller was in the loop. See SYSID_TEST_CL_VEL_PLANT_CHIRP in
+// config.h.
+typedef enum
+{
+    CL_VEL_CTRL_PLANT_ID = 0,   // private P-only loop, no feedforward
+    CL_VEL_CTRL_DEPLOYED        // shared velocity_loop, FF per CL_VEL_CHIRP_FF
+} ClVelController;
+
+// The P-only loop for plant identification. Private to this file, so the
+// identification run never writes the shared velocity_loop's gains.
+static PIState vel_plant_id_loop;
+
+static void run_cl_vel_chirp(ClVelController ctrl)
 {
     float theta = foc_theta_from_encoder();
 
@@ -916,17 +930,12 @@ static void run_cl_vel_chirp(void)
 
         if (vel_chirp_settle_tick < CL_VEL_CHIRP_SETTLE_TICKS)
         {
-            if (vel_chirp_settle_tick == 0u)
+            if (vel_chirp_settle_tick == 0u && ctrl == CL_VEL_CTRL_PLANT_ID)
             {
-                // P-only velocity loop for this identification run -- see
-                // CL_VEL_CHIRP_PONLY_KP in config.h for why. velocity_loop is
-                // a shared global (loops.c); loops_reset() puts the real
-                // VEL_KP/VEL_KI back at the next ALIGN->RUN transition.
-#if CL_VEL_CHIRP_DEPLOYED
-                /* deployed VEL_KP/VEL_KI already installed by loops_reset() */
-#else
-                pi_init(&velocity_loop, CL_VEL_CHIRP_PONLY_KP, 0.0f, -0.5f, 0.5f);
-#endif
+                // P-only, Ki=0 -- see CL_VEL_CHIRP_PONLY_KP in config.h for
+                // why. The deployed path needs no setup: loops_reset()
+                // already installed VEL_KP/VEL_KI in velocity_loop.
+                pi_init(&vel_plant_id_loop, CL_VEL_CHIRP_PONLY_KP, 0.0f, -0.5f, 0.5f);
             }
 
             vel_cmd_rad_sec = 0.0f;
@@ -975,17 +984,20 @@ static void run_cl_vel_chirp(void)
         // 1-H going negative. At 0.6Hz the measured iq_cmd peak was 0.105A
         // against a 0.094A Coulomb term, i.e. the feedforward was supplying
         // essentially all of the current and the P term almost none.
-#if CL_VEL_CHIRP_DEPLOYED
-  #if CL_VEL_CHIRP_FF
-        iq_cmd = velocity_loop_step(vel_cmd_rad_sec, vel_meas_rad, DT_VELOCITY);
-  #else
-        /* deployed VEL_KP/VEL_KI, friction feedforward off -- what the
-         * position loop actually runs on. See CL_VEL_CHIRP_FF. */
-        iq_cmd = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
-  #endif
+        if (ctrl == CL_VEL_CTRL_PLANT_ID)
+        {
+            iq_cmd = pi_step(&vel_plant_id_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
+        }
+        else
+        {
+#if CL_VEL_CHIRP_FF
+            iq_cmd = velocity_loop_step(vel_cmd_rad_sec, vel_meas_rad, DT_VELOCITY);
 #else
-        iq_cmd = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
+            /* deployed VEL_KP/VEL_KI, friction feedforward off -- what the
+             * position loop actually runs on. See CL_VEL_CHIRP_FF. */
+            iq_cmd = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
 #endif
+        }
     }
 
     foc_vd_applied = pi_step(&d_current_loop, 0.0f - i_d_meas, SYSID_DT);
@@ -1530,7 +1542,9 @@ void foc_sysid_step(void)
         #elif SYSID_TEST == RIPPLE_DEBUG
             run_cl_vel_step();
         #elif SYSID_TEST == SYSID_TEST_CL_VEL_CHIRP
-            run_cl_vel_chirp();
+            run_cl_vel_chirp(CL_VEL_CTRL_DEPLOYED);
+        #elif SYSID_TEST == SYSID_TEST_CL_VEL_PLANT_CHIRP
+            run_cl_vel_chirp(CL_VEL_CTRL_PLANT_ID);
         #elif SYSID_TEST == SYSID_TEST_POSITION_STEP
             run_position_step();
         #elif SYSID_TEST == SYSID_TEST_CL_POS_CHIRP
@@ -1609,7 +1623,7 @@ void foc_sysid_step(void)
     int16_t sysid_f_slot = (int16_t)(vel_cmd_rad_sec * 1000.0f / VEL_CMD_TELEM_DIV);
     int16_t last_slot    = (int16_t)(vel_meas_counts / VEL_TELEM_DIV);
 
-#elif SYSID_TEST == SYSID_TEST_CL_VEL_CHIRP
+#elif SYSID_TEST == SYSID_TEST_CL_VEL_CHIRP || SYSID_TEST == SYSID_TEST_CL_VEL_PLANT_CHIRP
 
     /* Closed-loop velocity chirp:
      *   sysid_f slot -> velocity command [mrad/s]
@@ -1753,7 +1767,7 @@ void foc_sysid_step(void)
 #if SYSID_TEST == SYSID_TEST_POSITION_STEP || SYSID_TEST == SYSID_TEST_CL_POS_CHIRP || SYSID_TEST == SYSID_TEST_CINE_SWEEP
     int16_t enc_hi_slot = (int16_t)(vel_cmd_rad_sec * 1000.0f / VEL_CMD_TELEM_DIV); /* vel_cmd [mrad/s / VEL_CMD_TELEM_DIV] */
     int16_t enc_lo_slot = (int16_t)(vel_meas_counts / VEL_TELEM_DIV); /* vel_meas [counts/s / VEL_TELEM_DIV] */
-#elif SYSID_TEST == SYSID_TEST_CL_VEL_CHIRP
+#elif SYSID_TEST == SYSID_TEST_CL_VEL_CHIRP || SYSID_TEST == SYSID_TEST_CL_VEL_PLANT_CHIRP
     /* enc_hi repurposed to carry the velocity controller's own output
      * (iq_cmd, what it's actually asking the current loop for) -- not
      * previously visible in telemetry at all for this test, only the

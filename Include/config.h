@@ -26,6 +26,7 @@
 #define SYSID_TEST_SHUNT_NOISE              11
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_BREAKAWAY                13
+#define SYSID_TEST_CL_VEL_PLANT_CHIRP       14
 
 #define SYSID_TEST SYSID_TEST_CL_VEL_CHIRP
 
@@ -393,20 +394,22 @@
 // too small to fit well.
 #define CL_VEL_CHIRP_PONLY_KP    0.0239f
 
-// CL_VEL_CHIRP_DEPLOYED -- which controller the velocity chirp runs.
-//   0 = identification: P-only (CL_VEL_CHIRP_PONLY_KP), friction feedforward
-//       bypassed, so C(s) really is that constant and the plant back-out
-//       P(s) = L(s)/Kp is valid. Use this to measure the plant.
-//   1 = verification: the deployed VEL_KP/VEL_KI PI *and* the friction
-//       feedforward, i.e. exactly what real trajectory mode runs. Use this to
-//       check the shipped loop. The back-out is meaningless here (C(s) is a
-//       PI plus a reference feedforward path) -- read H(s) only.
-#define CL_VEL_CHIRP_DEPLOYED    1
+// Two tests share the closed velocity loop chirp; they differ only in the
+// controller in the loop, and the test ID (sent in every telemetry frame)
+// records which one ran:
+//   SYSID_TEST_CL_VEL_PLANT_CHIRP -- identification: a private P-only loop
+//       (CL_VEL_CHIRP_PONLY_KP, Ki=0, no friction feedforward), so C(s)
+//       really is that constant and the plant back-out P(s) = L(s)/Kp is
+//       valid. Use this to measure the plant.
+//   SYSID_TEST_CL_VEL_CHIRP -- verification: the deployed VEL_KP/VEL_KI PI,
+//       with friction feedforward added only if CL_VEL_CHIRP_FF=1. Use this
+//       to check the shipped loop. The back-out is meaningless here (C(s) is
+//       a PI, plus a reference feedforward path when FF=1) -- read H(s) only.
 
-// CL_VEL_CHIRP_FF -- friction feedforward on top of the controller
-// CL_VEL_CHIRP_DEPLOYED selects. Only meaningful when DEPLOYED=1; the P-only
-// identification path never had it. DEPLOYED=1 + FF=0 is the configuration the
-// position loop actually sits on, and measured that way on 2026-09-19 the
+// CL_VEL_CHIRP_FF -- friction feedforward on top of the deployed PI in
+// SYSID_TEST_CL_VEL_CHIRP. The P-only plant-ID test never has it. FF=0 is the
+// configuration the position loop actually sits on, and measured that way on
+// 2026-09-19 the
 // inner loop peaks +10.8dB at 32Hz -- invisible in the P-only identification
 // runs, which are flat there.
 #define CL_VEL_CHIRP_FF          0
