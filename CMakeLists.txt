@@ -25,6 +25,8 @@ add_executable(fw.elf
     src/current_feedback.c
     src/isr_timing.c
     src/observer.c
+    src/trap_gen.c
+    src/minjerk_gen.c
     src/sysid/foc_sysid.c
     src/sysid/foc_trajectory.c
     startup/startup_stm32f411xe.s

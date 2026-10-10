@@ -76,6 +76,36 @@ void TIM1_UP_TIM10_IRQHandler(void)
     ISR_TIME_END(ISR_T_TIM1, ISR_PIN_TIM1);
 }
 
+// =============================================================================
+// SysTick_Handler — 1 kHz. Drive state machine + position tick --
+// deliberately NOT in the 20kHz TIM1 ISR, per the architecture already
+// documented across drive.c and foc_trajectory.h. Priority set explicitly
+// below so this can never preempt the real-time control loop.
+//
+// foc_trajectory_position_tick() is called every tick, not just while
+// servo is on: it only actually runs the generator/position loop when
+// servo-on, but it always reports telemetry -- calling it conditionally
+// meant the exact tick that flips drive_state to IDLE (inside
+// drive_sm_run(), just above) never got a telemetry report for that new
+// state, so the Pi never saw completion.
+// =============================================================================
+void SysTick_Handler(void)
+{
+    tick_ms++;
+
+    if (!system_initialized)
+        return;
+
+    // Trajectory mode only. In RUN_MODE_SYSID the drive state machine and the
+    // position tick have nothing to run -- foc_sysid_step() owns the motor --
+    // and the position tick's spi_update_telem() does not exist there, since
+    // sysid sends SysIdSample frames instead.
+#if RUN_MODE != RUN_MODE_SYSID
+    drive_sm_run();
+    foc_trajectory_position_tick();
+#endif
+}
+
 int main(void)
 {
     system_initialized = false;
@@ -155,7 +185,21 @@ int main(void)
 
     SysTick_Config(SystemCoreClock / 1000u);
 
+    // Strictly lower priority (higher number) than the 20kHz control loop
+    // (TIM1_UP_TIM10_IRQn=0, pwm.c) and everything else (ADC=1, DMA1_Stream3/
+    // EXTI15_10=2) -- SysTick must never preempt real-time control. 15 is
+    // what ringBuffer.c's own comment already anticipates for this.
+    NVIC_SetPriority(SysTick_IRQn, 15);
+
     system_initialized = true;
+
+    // Bench-test scaffolding (forced SERVO_ON + a hardcoded move, no SPI
+    // involved) is gone now that the real path is wired: DMA1_Stream3_
+    // IRQHandler (spi.c) parses SPI2_OP_MOVE_CMD and calls
+    // foc_trajectory_start_move() + drive_request_servo_on() itself, driven
+    // by whatever the Pi actually sends. drive.c's STATE_SERVO_ON exit
+    // checks foc_trajectory_move_active() (generator DONE) instead of the
+    // expected_samples placeholder that scaffolding needed.
 
     while (1)
     {

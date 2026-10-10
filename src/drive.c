@@ -22,6 +22,7 @@
 #include "ringBuffer.h"
 #include "pwm.h"
 #include "config.h"
+#include "foc_trajectory.h"
 #include <math.h>
 #include <stdint.h>
 
@@ -203,11 +204,19 @@ void drive_sm_run(void)
     // ── SERVO_ON — closed-loop FOC with trajectory from Pi ───────────────────
     // Init happens at transition in the IDLE case above, not here.
     // This block only runs the running-state logic + the drain check.
+    //
+    // RUN_MODE_SYSID drains the ring/sample-count as before -- unrelated to
+    // this rebuild. RUN_MODE_CLOSED_LOOP has no ring being drained, so its
+    // exit is real completion: the trapezoidal generator reporting DONE.
     case STATE_SERVO_ON:
+#if RUN_MODE == RUN_MODE_SYSID
         if ((expected_samples > 0u && samples_consumed >= expected_samples) ||
             (expected_samples == 0u &&
              ring_count() == 0u && first_sample_ready && samples_consumed > 0))
-        {   
+#else
+        if (!foc_trajectory_move_active())
+#endif
+        {
             pwm_disable();
             state              = STATE_IDLE;
             starting_flag      = 1;
