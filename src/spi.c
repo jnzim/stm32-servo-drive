@@ -402,8 +402,18 @@ void DMA1_Stream3_IRQHandler(void)
         uint16_t calc = crc16_calc((const uint8_t *)&cmd, MOVE_CMD_CRC_LEN);
         if (calc == cmd.crc16)
         {
-            foc_trajectory_start_move(cmd.target_pos, cmd.vel_max, cmd.accel_max);
-            drive_request_servo_on();
+            // One move per MoveCmd: the Pi resends the command in every frame
+            // until it sees SERVO_ON, so most copies arrive after the first
+            // has already been taken. Accept only while the drive is IDLE
+            // with nothing pending or running; later copies are dropped.
+            // Accepting them re-latched g_move_pending (restarting a running
+            // move from wherever it was) and left servo_on_req set, which
+            // put the drive back into SERVO_ON right after the move ended.
+            if (drive_is_idle() && !foc_trajectory_move_active())
+            {
+                foc_trajectory_start_move(cmd.target_pos, cmd.vel_max, cmd.accel_max);
+                drive_request_servo_on();
+            }
         }
         else
         {

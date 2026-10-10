@@ -221,6 +221,10 @@ void drive_sm_run(void)
             state              = STATE_IDLE;
             starting_flag      = 1;
             first_sample_ready = 0;
+            // Drop any request latched while this move ran, so finishing a
+            // move can never re-enter SERVO_ON by itself (observed 2026-10-10:
+            // samples_consumed 1875 -> 1 between moves, with no new command).
+            servo_on_req       = 0;
         }
         break;
 
