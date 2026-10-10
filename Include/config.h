@@ -723,6 +723,16 @@
 // actually been measured up there.
 #define POSITION_VEL_LIMIT      80.0f    // rad/s -- clamp P output, no windup state to clamp
 
+// Following-error trip (trajectory mode). If |pos_cmd - pos_fbk| exceeds this
+// while a move is running, the drive faults: bridge off, STATE_FAULT latched
+// until reset, FAULT_FOLLOWING_ERROR set in the telemetry fault_flags.
+// Normal moves run at a few counts of error (peak 0.73um = 3 counts on the
+// 2026-10-10 +2mm moves); a 1mm limit (4096 counts) is ~1370x that, so it
+// should only ever fire on a runaway -- which, before this existed, ran 43mm.
+#define FOLLOWING_ERROR_LIMIT_MM      1.0f
+#define FOLLOWING_ERROR_LIMIT_COUNTS  \
+    ((int32_t)(FOLLOWING_ERROR_LIMIT_MM * (float)ENCODER_CPR / STAGE_LEAD_MM_PER_REV))
+
 // =============================================================================
 // Position step test parameters
 // =============================================================================

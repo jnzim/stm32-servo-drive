@@ -67,6 +67,10 @@ typedef TrapGen    MoveGen;
 #endif
 
 static MoveGen  g_move;
+
+// FAULT_* bits (protocol.h) latched by this file, reported in every
+// telemetry frame. Cleared only by reset, like STATE_FAULT itself.
+static uint8_t  traj_fault_flags = 0;
 static bool     g_move_pending   = false;
 static int32_t  g_move_target    = 0;
 static int32_t  g_move_vel_max   = 0;
@@ -227,6 +231,17 @@ void foc_trajectory_position_tick(void)
         int32_t raw          = encoder_get_position() - traj_enc_offset;
         float   pos_meas_rad = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
 
+        // Following-error trip -- see FOLLOWING_ERROR_LIMIT_MM (config.h).
+        // drive_sm_run() takes the fault on the next 1ms tick: bridge off,
+        // STATE_FAULT latched.
+        int32_t following_err = pos_cmd_counts - raw;
+        if (following_err >  FOLLOWING_ERROR_LIMIT_COUNTS ||
+            following_err < -FOLLOWING_ERROR_LIMIT_COUNTS)
+        {
+            traj_fault_flags |= FAULT_FOLLOWING_ERROR;
+            drive_request_fault();
+        }
+
         // p_step() has no built-in output clamp (unlike pi_step()'s
         // PIState) -- manual clamp, same idiom as foc_sysid.c's
         // run_position_step().
@@ -269,7 +284,7 @@ void foc_trajectory_position_tick(void)
                                              * COUNTS_PER_RAD),
         .timestamp_ms     = tick_ms,
         .drive_state      = (uint8_t)drive_get_state(),
-        .fault_flags      = 0,
+        .fault_flags      = traj_fault_flags,
         .samples_consumed = samples_consumed,
         .iq_cmd           = (int16_t)lroundf(iq_cmd * 1000.0f),      // A -> mA
         .i_q_fbk          = (int16_t)lroundf(foc_iq_meas * 1000.0f), // A -> mA
