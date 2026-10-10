@@ -159,7 +159,12 @@ void foc_trajectory_step(void)
             }
 
             // ── Current loop @ 20 kHz ────────────────────────────────────────
-            foc_vd_applied = 0.0f;
+            // d axis regulated to zero, same PI and gains as q -- exactly as
+            // foc_sysid.c does, where the current loop was tuned and verified.
+            // Previously vd was hardwired to 0, leaving i_d uncontrolled.
+            foc_vd_applied = pi_step(&d_current_loop,
+                                     0.0f - i_d_meas,
+                                     DT_CURRENT);
             foc_vq_applied = pi_step(&current_loop,
                                      iq_cmd - foc_iq_meas,
                                      DT_CURRENT);
