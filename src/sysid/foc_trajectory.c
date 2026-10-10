@@ -22,6 +22,7 @@
 #include "pwm.h"
 #include "loops.h"
 #include "trap_gen.h"
+#include "minjerk_gen.h"
 #include "drive.h" // drive_is_servo_on() / drive_get_state()
 #include "spi.h"   // spi_update_telem()
 
@@ -49,7 +50,22 @@ static int32_t   traj_enc_offset = 0;
 // The move generator, and a latch for a move requested before RUN begins
 // (e.g. boot scaffolding firing immediately, well before ALIGN finishes) --
 // see foc_trajectory_start_move()/foc_trajectory_position_tick() below.
-static TrapGen  g_move;
+//
+// TRAJ_PROFILE (config.h) picks the generator. Both share one interface, so
+// the rest of this file calls move_gen_* and does not know which it is.
+#if TRAJ_PROFILE == TRAJ_PROFILE_MINJERK
+typedef MinJerkGen MoveGen;
+#define move_gen_start   minjerk_gen_start
+#define move_gen_step    minjerk_gen_step
+#define move_gen_active  minjerk_gen_active
+#else
+typedef TrapGen    MoveGen;
+#define move_gen_start   trap_gen_start
+#define move_gen_step    trap_gen_step
+#define move_gen_active  trap_gen_active
+#endif
+
+static MoveGen  g_move;
 static bool     g_move_pending   = false;
 static int32_t  g_move_target    = 0;
 static int32_t  g_move_vel_max   = 0;
@@ -158,7 +174,7 @@ void foc_trajectory_step(void)
 // (100000 @ 20kHz = 5s) before traj_enc_offset is captured and the
 // current/velocity loop actually goes live. Starting the generator before
 // that would have the move complete (or sit mid-move) against a dead loop,
-// so a pending move waits here for RUN before trap_gen_start() runs.
+// so a pending move waits here for RUN before move_gen_start() runs.
 // =============================================================================
 
 void foc_trajectory_position_tick(void)
@@ -185,11 +201,11 @@ void foc_trajectory_position_tick(void)
             // command was first received).
             int32_t start_pos      = encoder_get_position() - traj_enc_offset;
             int32_t absolute_target = start_pos + g_move_target;
-            trap_gen_start(&g_move, start_pos, absolute_target, g_move_vel_max, g_move_accel_max);
+            move_gen_start(&g_move, start_pos, absolute_target, g_move_vel_max, g_move_accel_max);
             g_move_pending = false;
         }
 
-        trap_gen_step(&g_move, DT_POSITION, &pos_cmd_counts, &vel_cmd_counts_s);
+        move_gen_step(&g_move, DT_POSITION, &pos_cmd_counts, &vel_cmd_counts_s);
         float pos_cmd_rad = (float)pos_cmd_counts / COUNTS_PER_RAD;
 
         int32_t raw          = encoder_get_position() - traj_enc_offset;
@@ -256,7 +272,7 @@ void foc_trajectory_start_move(int32_t target_pos, int32_t vel_max, int32_t acce
 
 bool foc_trajectory_move_active(void)
 {
-    return g_move_pending || trap_gen_active(&g_move);
+    return g_move_pending || move_gen_active(&g_move);
 }
 
 // =============================================================================

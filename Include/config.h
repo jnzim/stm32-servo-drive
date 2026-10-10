@@ -16,6 +16,17 @@
 // in this file was taken that way.
 #define RUN_MODE              RUN_MODE_CLOSED_LOOP
 
+// Move profile for RUN_MODE_CLOSED_LOOP. Both generators take the same
+// MoveCmd (target, vel_max, accel_max), so the Pi side does not change.
+//   TRAJ_PROFILE_TRAP     trapezoidal velocity (trap_gen.c): accel steps
+//                         between +-accel_max, infinite jerk at each corner
+//   TRAJ_PROFILE_MINJERK  rest-to-rest quintic (minjerk_gen.c): accel is
+//                         continuous; duration chosen so neither vel_max nor
+//                         accel_max is exceeded
+#define TRAJ_PROFILE_TRAP     0
+#define TRAJ_PROFILE_MINJERK  1
+#define TRAJ_PROFILE          TRAJ_PROFILE_TRAP
+
 // =============================================================================
 // Sysid test selector
 // =============================================================================
