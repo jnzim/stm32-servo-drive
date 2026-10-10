@@ -263,7 +263,10 @@ void foc_trajectory_position_tick(void)
         .pos_cmd          = pos_cmd_counts,
         .pos_fbk          = pos_fbk,
         .vel_cmd          = (int32_t)lroundf(vel_cmd_counts_s),
-        .vel_fbk          = encoder_get_velocity(),
+        // The velocity the loop actually consumes (observer or boxcar, per
+        // VEL_LOOP_USES_OBSERVER), in the field's counts/s units.
+        .vel_fbk          = (int32_t)lroundf(velocity_feedback_rad(encoder_get_velocity())
+                                             * COUNTS_PER_RAD),
         .timestamp_ms     = tick_ms,
         .drive_state      = (uint8_t)drive_get_state(),
         .fault_flags      = 0,
