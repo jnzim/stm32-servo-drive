@@ -204,18 +204,18 @@ void current_feedback_init(void)
         (12u << ADC_JSQR_JSQ4_Pos);
 
     /*
-     * Hardware trigger: TIM1_TRGO, falling edge only.
+     * Start the three conversions from TIM1 once per PWM period, just
+     * before the counter peak (the middle of the low-side on time).
      *
-     * Per RM0383 Table 43:
-     *   JEXTSEL = 0001 (1) = TIM1_TRGO
-     *   JEXTEN  = 10   (2) = falling edge
+     * pwm.c puts TIM1 channel 4 at CCR4 = 2499 - 168 and sends its output
+     * to the ADC. That output goes low when the counter passes CCR4 on the
+     * way up, 1.68us before the peak, and high again on the way down.
      *
-     * TIM1 CR2 MMS=111 routes OC4REF as TRGO. PWM mode 1: OC4REF is high
-     * while CNT < CCR4, so the up-count crossing is a FALLING edge. The
-     * 3-channel sequence (SMPR=15 cycles -> 3 x 1.08 us) starts there and is
-     * centered on the counter peak by PWM_SAMPLE_OFFSET (pwm.c). The
-     * down-count edge must not trigger: it would start a second, late
-     * sequence after the peak.
+     *   JEXTSEL = 1 : trigger source is TIM1 (channel 4 output)
+     *   JEXTEN  = 2 : trigger on the falling edge only, once per period
+     *
+     * Each channel takes 1.08us, so A, B, C are sampled about 1.1us before,
+     * at, and 1.1us after the peak.
      */
     ADC1->CR2 &= ~(ADC_CR2_JEXTSEL | ADC_CR2_JEXTEN);
     ADC1->CR2 |=  ((1u << ADC_CR2_JEXTSEL_Pos) |
