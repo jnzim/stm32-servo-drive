@@ -35,9 +35,6 @@
 
 #pragma once
 
-// Profile refill request
- #define READY_RING_REFILL   13u 
-
 // Rpi SPR2 slave
 #define PIN_RPI_NSS      12  // PB12
 #define PIN_RPI_SCK      13  // PB13

@@ -1,29 +1,14 @@
-// spi.c — SPI2 slave TX/RX DMA sysid latest-sample bring-up
+// spi.c — SPI2 slave link to the Pi: 32-byte telemetry out, MoveCmd in.
 //
-// TX DMA is free-running CIRC over a single live buffer. The control loop
-// (TIM1 ISR) writes straight into it, unconditionally, every tick -- no
-// ping-pong, no CS check, no interrupt in the loop at all. DMA keeps
-// re-transmitting whatever is currently there, forever, entirely in
-// hardware; the Pi always gets the latest committed sample with zero
-// dependency on any ISR's latency or priority.
+// TX: DMA1 Stream4, free-running CIRC over one 32-byte buffer. The control
+// loop overwrites the buffer in place and DMA keeps sending whatever is
+// there, so no interrupt is in the TX path and the control loop stays the
+// highest priority. TX is never realigned: after a short transaction its
+// byte phase can drift, and the Pi resyncs by CRC (foc-sysid).
 //
-// This means the control loop can be (and is) the unconditional highest
-// NVIC priority in the system -- nothing here ever needs to preempt it.
-// The previous design needed EXTI15_10 (CS edge) to react within the gap
-// between Pi transactions to re-arm the TX stream; that gap turned out to
-// be tighter than one control-loop period, which is genuinely not a
-// defensible reason to let telemetry outrank the control loop. Removing
-// the need for that reaction removes the constraint instead of working
-// around it.
-//
-// Tradeoff: a torn/misaligned frame is now caught purely by the crc field,
-// same mechanism already relied on for the flags-aliasing corruption bug
-// below. After a glitched/short transaction the DMA's byte phase can drift
-// relative to the Pi's 32-byte read window (nothing here forces
-// realignment anymore); the Pi side must detect a bad CRC and resync by
-// trying the other byte rotations of what it read, the standard technique
-// for a self-framed stream. That resync logic lives in the Pi-side capture
-// tool (foc-sysid, rpi5), not in this repo.
+// RX: DMA1 Stream3, CIRC + double buffer. Each completed 32-byte frame is
+// parsed in DMA1_Stream3_IRQHandler. The CS rising edge (EXTI12) puts the
+// RX DMA back at byte 0 after any transaction that was not 32 bytes.
 
 #include "spi.h"
 #include "isr_timing.h"
@@ -40,24 +25,14 @@
 
 
 /* =============================================================================
- * Legacy globals
+ * Debug counters (read with the debugger)
  * =============================================================================*/
 
-volatile uint32_t cnt_data      = 0;
-volatile uint32_t cnt_error     = 0;
-volatile uint32_t cnt_telem     = 0;
-volatile uint32_t cnt_block_hdr = 0;
-volatile uint32_t cnt_cs        = 0;
-volatile uint32_t cnt_tx_rearm  = 0;
-volatile uint32_t cnt_dma_stall = 0;
-volatile uint32_t cnt_rx_realign = 0;
-
-volatile uint8_t ready_asserted = 0;
-
-volatile TelemetryFrame telem_buf[2];
-volatile uint8_t        telem_write_idx = 0;
-
-volatile uint16_t expected_samples = 0;
+volatile uint32_t cnt_telem      = 0;   /* RX frames completed            */
+volatile uint32_t cnt_error      = 0;   /* MoveCmd CRC failures           */
+volatile uint32_t cnt_cs         = 0;   /* CS rising edges                */
+volatile uint32_t cnt_rx_realign = 0;   /* RX DMA realigned after a short */
+                                        /* transaction                    */
 
 
 /* =============================================================================
@@ -65,15 +40,9 @@ volatile uint16_t expected_samples = 0;
  * =============================================================================*/
 
 /*
- * Double-buffered (DMA DBM) RX -- fixes a single-buffer race: with one
- * buffer, DMA can start overwriting spi2_rx_buf with the *next* transaction
- * while DMA1_Stream3_IRQHandler is still reading the frame that just
- * completed, tearing it mid-read with no way to detect the tear (unlike
- * TX, where a torn frame is caught by the Pi's own CRC check once the
- * whole frame -- crc16 included -- has been read). DBM lets DMA fill the
- * *other* buffer while software reads the one that just completed; CT
- * (current-target) tells the IRQ which buffer that is (see
- * DMA1_Stream3_IRQHandler below).
+ * Double-buffered RX: DMA fills one buffer while the IRQ reads the frame
+ * that just completed in the other, so the next transaction cannot
+ * overwrite a frame mid-read.
  */
 static volatile uint8_t spi2_rx_buf[2][SPI2_TRANSACTION_BYTES];
 
@@ -84,19 +53,13 @@ static volatile uint8_t spi2_rx_buf[2][SPI2_TRANSACTION_BYTES];
 static SysIdSample spi_tx_buf;
 
 /*
- * Real TelemetryFrame TX buffer, used under RUN_MODE_CLOSED_LOOP instead of
- * spi_tx_buf -- see spi_init()'s DMA1_Stream4 setup and spi_update_telem()
- * below. SysID mode is untouched: it keeps sending SysIdSample exactly as
- * before, this buffer doesn't exist for it.
+ * TX buffer in RUN_MODE_CLOSED_LOOP (TelemetryFrame). Sysid sends
+ * spi_tx_buf (SysIdSample) instead.
  */
 #if RUN_MODE != RUN_MODE_SYSID
 static TelemetryFrame telem_tx_buf;
 #endif
 
-
-/* =============================================================================
- * Sysid sequence
- * =============================================================================*/
 
 extern volatile uint32_t g_control_tick;   /* main.c -- 20kHz, 50us per count */
 
@@ -114,13 +77,18 @@ typedef char TelemetryFrame_must_be_32_bytes[
  * DMA flag clear
  * =============================================================================*/
 
-static void spi2_dma_clear_flags(void)
+static void dma_stream3_clear_flags(void)
 {
     DMA1->LIFCR = DMA_LIFCR_CTCIF3  |
                   DMA_LIFCR_CHTIF3  |
                   DMA_LIFCR_CTEIF3  |
                   DMA_LIFCR_CDMEIF3 |
                   DMA_LIFCR_CFEIF3;
+}
+
+static void spi2_dma_clear_flags(void)
+{
+    dma_stream3_clear_flags();
 
     DMA1->HIFCR = DMA_HIFCR_CTCIF4  |
                   DMA_HIFCR_CHTIF4  |
@@ -131,25 +99,13 @@ static void spi2_dma_clear_flags(void)
 
 
 /* =============================================================================
- * Public sysid update API
+ * spi_sysid_update_latest — sysid telemetry, called from the TIM1 ISR
  *
- * Called from TIM1 ISR at 20 kHz. Writes straight into the single live
- * buffer, unconditionally -- no CS check, no double-buffer. A write can
- * land while the Pi is mid-transaction and hand out a torn frame; the
- * crc field below is what catches that on the Pi side. __DMB() orders
- * the field writes so the DMA (or a racing read) can't see a partial
- * update.
+ * Writes only while the Pi's chip select is idle (NSS high), so a frame is
+ * never rewritten mid-transmission. A transaction is 32 bytes at 1 MHz =
+ * 256us, about every 294us, so the ~38us idle gap is hit regularly; a
+ * skipped tick just means the Pi reads a slightly older frame.
  * =============================================================================*/
-
-/*
- * Write only while the Pi's chip select is idle (NSS high). A transaction is
- * 32 bytes at 1 MHz = 256us and they arrive about every 294us, so there is a
- * ~38us idle gap; this 20 kHz loop lands in it regularly. Skipping a tick just
- * means the Pi reads a slightly older frame -- it samples ~3.4k frames/s out of
- * 20k produced anyway. Before this, the buffer was rewritten mid-transmission
- * and every frame went out stitched from several ticks (measured 2026-09-19:
- * 157637/157637 torn once a working CRC could see it).
- */
 void spi_sysid_update_latest(int16_t ia_mA,
                              int16_t ib_mA,
                              int16_t ic_mA,
@@ -183,11 +139,6 @@ void spi_sysid_update_latest(int16_t ia_mA,
     s->adc_b      = adc_b;
     s->adc_c      = adc_c;
     s->flags      = flags;
-    /* Real CRC now -- this was hardcoded to 0 (no integrity checking at
-     * all). A single corrupted frame's flags byte was aliasing into a
-     * valid-looking SYSID_STAGE_IDLE (low 2 bits happened to read 0b10),
-     * making the Pi capture tool think the sweep finished ~23s into a 60s
-     * run. Same crc16_calc/CCITT already used for TrajSlot. */
     s->crc        = crc16_calc((const uint8_t *)s, SYSID_CRC_LEN);
     s->pad        = test_id;
 
@@ -202,19 +153,9 @@ void spi_sysid_update_latest(int16_t ia_mA,
 void spi_init(void)
 {
     RCC->AHB1ENR |= RCC_AHB1ENR_DMA1EN
-                  | RCC_AHB1ENR_GPIOBEN
-                  | RCC_AHB1ENR_GPIOCEN;
+                  | RCC_AHB1ENR_GPIOBEN;
 
     RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
-
-    /* PC13 READY output, idle high */
-    GPIOC->MODER   &= ~(3u << (READY_RING_REFILL * 2));
-    GPIOC->MODER   |=  (1u << (READY_RING_REFILL * 2));
-    GPIOC->OTYPER  &= ~(1u << READY_RING_REFILL);
-    GPIOC->OSPEEDR &= ~(3u << (READY_RING_REFILL * 2));
-    GPIOC->OSPEEDR |=  (1u << (READY_RING_REFILL * 2));
-    GPIOC->PUPDR   &= ~(3u << (READY_RING_REFILL * 2));
-    GPIOC->BSRR     =  (1u << READY_RING_REFILL);
 
     /* SPI2 pins: PB12=NSS, PB13=SCK, PB14=MISO, PB15=MOSI */
     GPIOB->MODER &= ~((3u << (PIN_RPI_NSS  * 2)) |
@@ -277,11 +218,8 @@ void spi_init(void)
 #endif
 
     /*
-     * RX DMA: Pi MOSI -> SPI2->DR -> spi2_rx_buf[0/1]
-     * CIRC + DBM (double buffer mode) -- see spi2_rx_buf's comment. DMA
-     * fills M0AR first (CT starts at 0), then ping-pongs to M1AR and back
-     * automatically at each transfer complete; software never touches
-     * M0AR/M1AR again after this setup.
+     * RX DMA: Pi MOSI -> SPI2->DR -> spi2_rx_buf[0/1]. CIRC + double buffer:
+     * fills buffer 0 first, then alternates at each transfer complete.
      */
     DMA1_Stream3->PAR  = (uint32_t)&SPI2->DR;
     DMA1_Stream3->M0AR = (uint32_t)spi2_rx_buf[0];
@@ -300,14 +238,8 @@ void spi_init(void)
     NVIC_EnableIRQ(DMA1_Stream3_IRQn);
 
     /*
-     * TX DMA: spi_tx_buf -> SPI2->DR -> Pi MISO
-     *
-     * Free-running CIRC over the single 32-byte buffer. M0AR/NDTR are set
-     * once, here, and never touched again -- no CS-triggered rearm, no
-     * interrupt in this path at all. The stream just keeps re-sending
-     * whatever spi_sysid_update_latest() last wrote, forever, entirely in
-     * hardware. See file header for the phase-drift tradeoff this implies
-     * and why it's the Pi's job (CRC-based resync) to handle, not an ISR's.
+     * TX DMA: TX buffer -> SPI2->DR -> Pi MISO. Free-running CIRC, set up
+     * once here and never touched again (see file header).
      */
     DMA1_Stream4->PAR  = (uint32_t)&SPI2->DR;
 #if RUN_MODE == RUN_MODE_SYSID
@@ -324,8 +256,7 @@ void spi_init(void)
 
     DMA1_Stream4->CR |= DMA_SxCR_EN;
 
-    
-    SPI2->CR1 = SPI_CR1_CPHA;  
+    SPI2->CR1 = SPI_CR1_CPHA;
     SPI2->CR2 = SPI_CR2_RXDMAEN | SPI_CR2_TXDMAEN;
 
     __DMB();
@@ -349,10 +280,8 @@ void spi_init(void)
 
 
 /* =============================================================================
- * TelemetryFrame update -- RUN_MODE_CLOSED_LOOP's equivalent of
- * spi_sysid_update_latest() above. Same idiom: single live buffer, written
- * unconditionally, crc16 computed last, __DMB() orders the writes so DMA
- * (or a racing read) can't see a partial update.
+ * spi_update_telem — closed-loop telemetry, called from the position tick.
+ * Copies the frame into the TX buffer and computes the CRC last.
  * =============================================================================*/
 
 #if RUN_MODE != RUN_MODE_SYSID
@@ -377,19 +306,11 @@ void DMA1_Stream3_IRQHandler(void)
 
     ISR_TIME_BEGIN(ISR_T_DMA3, ISR_PIN_DMA3);
 
-    DMA1->LIFCR = DMA_LIFCR_CTCIF3  |
-                  DMA_LIFCR_CHTIF3  |
-                  DMA_LIFCR_CTEIF3  |
-                  DMA_LIFCR_CDMEIF3 |
-                  DMA_LIFCR_CFEIF3;
+    dma_stream3_clear_flags();
 
     cnt_telem++;
 
-    // CT reflects the buffer DMA just switched *to* (i.e. the one it's
-    // about to fill next) -- hardware flips it right at this transfer-
-    // complete event, before this IRQ runs. So the frame that just
-    // finished filling is the *other* buffer, safe to read now: DMA won't
-    // touch it again until the next full ping-pong cycle.
+    // CT is the buffer DMA is filling now; the completed frame is the other.
 #if RUN_MODE != RUN_MODE_SYSID
     uint32_t ct            = (DMA1_Stream3->CR & DMA_SxCR_CT) ? 1u : 0u;
     uint32_t completed_idx = 1u - ct;
@@ -403,13 +324,9 @@ void DMA1_Stream3_IRQHandler(void)
         uint16_t calc = crc16_calc((const uint8_t *)&cmd, MOVE_CMD_CRC_LEN);
         if (calc == cmd.crc16)
         {
-            // One move per MoveCmd: the Pi resends the command in every frame
-            // until it sees SERVO_ON, so most copies arrive after the first
-            // has already been taken. Accept only while the drive is IDLE
-            // with nothing pending or running; later copies are dropped.
-            // Accepting them re-latched g_move_pending (restarting a running
-            // move from wherever it was) and left servo_on_req set, which
-            // put the drive back into SERVO_ON right after the move ended.
+            // The Pi resends the MoveCmd in every frame until it sees
+            // SERVO_ON. Accept it only while IDLE with no move running, so
+            // each command starts exactly one move.
             if (drive_is_idle() && !foc_trajectory_move_active())
             {
                 foc_trajectory_start_move(cmd.target_pos, cmd.vel_max, cmd.accel_max);
@@ -431,23 +348,13 @@ void DMA1_Stream3_IRQHandler(void)
  * CS rising edge IRQ (EXTI12) — end of transaction, RX realign
  * =============================================================================*/
 /*
- * Fires when the Pi releases CS. Counts the edge (cnt_cs) and, if the
- * transaction that just ended was not a whole number of 32-byte frames,
- * puts the RX DMA back at byte 0 of buffer 0.
+ * Fires when the Pi releases CS. If the transaction was not a whole 32-byte
+ * frame (NDTR != 32), puts the RX DMA back at byte 0 of buffer 0.
  *
- * Why: the RX DMA is free-running CIRC with nothing tying it to CS. Any
- * transaction that is not 32 bytes long -- the Pi's 63-byte resync read,
- * or a glitched frame -- leaves it mid-buffer for good, and every later
- * MoveCmd lands rotated. frame[0] is then not SPI2_OP_MOVE_CMD and the
- * command is dropped before its CRC is even checked. Measured 2026-10-14
- * with the second move of a queue stuck: both RX buffers held the MoveCmd
- * rotated by 2 bytes (opcode at bytes 30-31), cnt_cs 26 ahead of cnt_telem.
- *
- * NDTR == 32 means the DMA is at a frame boundary (CIRC reloads it at each
- * transfer complete), which is the normal case: nothing to do, and the
- * frame that just completed is left for DMA1_Stream3_IRQHandler. Only a
- * partial frame is discarded. The TX side is not touched; the Pi
- * realigns to it on its own.
+ * The RX DMA is free-running with nothing tying it to CS, so a short or
+ * long transaction (the Pi's 63-byte resync read, a glitch) would leave
+ * every later MoveCmd rotated, and it would be dropped. Only the partial
+ * frame is discarded. TX is not touched; the Pi realigns to it.
  */
 static void spi2_rx_realign(void)
 {
@@ -456,11 +363,7 @@ static void spi2_rx_realign(void)
 
     /* Disabling mid-transfer sets TCIF; clear it so the RX ISR does not
      * treat the discarded partial frame as a completed one. */
-    DMA1->LIFCR = DMA_LIFCR_CTCIF3  |
-                  DMA_LIFCR_CHTIF3  |
-                  DMA_LIFCR_CTEIF3  |
-                  DMA_LIFCR_CDMEIF3 |
-                  DMA_LIFCR_CFEIF3;
+    dma_stream3_clear_flags();
 
     /* Drop any byte left in the SPI receiver, and clear OVR (DR then SR). */
     while (SPI2->SR & SPI_SR_RXNE) { (void)SPI2->DR; }
