@@ -246,6 +246,15 @@ void current_feedback_init(void)
 
 // =============================================================================
 // current_feedback_calibrate
+//
+// Measures each channel's zero-current ADC reading. Runs once at startup,
+// before pwm_enable(), so no current flows through the shunts.
+//   1. Busy-wait so the shunt amplifiers settle.
+//   2. Discard 32 software-started samples.
+//   3. Average 512 samples per channel into adc_offset[] (nominally 2048,
+//      falls back to ADC_ZERO if every sample timed out).
+//   4. Restore the TIM1_TRGO trigger and the JEOC interrupt.
+// Every current reading after this is (raw - adc_offset) * AMPS_PER_COUNT.
 // =============================================================================
 
 void current_feedback_calibrate(void)
