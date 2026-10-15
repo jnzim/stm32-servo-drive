@@ -50,6 +50,7 @@ volatile uint32_t cnt_block_hdr = 0;
 volatile uint32_t cnt_cs        = 0;
 volatile uint32_t cnt_tx_rearm  = 0;
 volatile uint32_t cnt_dma_stall = 0;
+volatile uint32_t cnt_rx_realign = 0;
 
 volatile uint8_t ready_asserted = 0;
 
@@ -331,7 +332,7 @@ void spi_init(void)
 
     SPI2->CR1 |= SPI_CR1_SPE;
 
-    /* CS edge IRQ on PB12 / EXTI12, falling edge — kept for cnt_cs counting */
+    /* CS rising edge IRQ on PB12 / EXTI12 -- end of transaction, RX realign */
     RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
 
     SYSCFG->EXTICR[3] &= ~(0xFu << 0);
@@ -427,18 +428,51 @@ void DMA1_Stream3_IRQHandler(void)
 
 
 /* =============================================================================
- * CS falling edge IRQ (EXTI12) — counting only, no rearm
+ * CS rising edge IRQ (EXTI12) — end of transaction, RX realign
  * =============================================================================*/
 /*
- * CS edge -- stats only now (cnt_cs). The old freeze bug and the rearm
- * dance that used to live here (see git history if needed) both went
- * away with it: DMA1_Stream4 is free-running CIRC (spi_init()), so there
- * is nothing left to rearm and nothing this handler must do before the
- * next transaction. It has no deadline, so its priority no longer
- * matters for correctness -- it's set low (2) purely because that's
- * where a no-deadline stats counter belongs, not because anything
- * requires it.
+ * Fires when the Pi releases CS. Counts the edge (cnt_cs) and, if the
+ * transaction that just ended was not a whole number of 32-byte frames,
+ * puts the RX DMA back at byte 0 of buffer 0.
+ *
+ * Why: the RX DMA is free-running CIRC with nothing tying it to CS. Any
+ * transaction that is not 32 bytes long -- the Pi's 63-byte resync read,
+ * or a glitched frame -- leaves it mid-buffer for good, and every later
+ * MoveCmd lands rotated. frame[0] is then not SPI2_OP_MOVE_CMD and the
+ * command is dropped before its CRC is even checked. Measured 2026-10-14
+ * with the second move of a queue stuck: both RX buffers held the MoveCmd
+ * rotated by 2 bytes (opcode at bytes 30-31), cnt_cs 26 ahead of cnt_telem.
+ *
+ * NDTR == 32 means the DMA is at a frame boundary (CIRC reloads it at each
+ * transfer complete), which is the normal case: nothing to do, and the
+ * frame that just completed is left for DMA1_Stream3_IRQHandler. Only a
+ * partial frame is discarded. The TX side is not touched; the Pi
+ * realigns to it on its own.
  */
+static void spi2_rx_realign(void)
+{
+    DMA1_Stream3->CR &= ~DMA_SxCR_EN;
+    for (uint32_t i = 0u; (DMA1_Stream3->CR & DMA_SxCR_EN) && i < 1000u; i++) { }
+
+    /* Disabling mid-transfer sets TCIF; clear it so the RX ISR does not
+     * treat the discarded partial frame as a completed one. */
+    DMA1->LIFCR = DMA_LIFCR_CTCIF3  |
+                  DMA_LIFCR_CHTIF3  |
+                  DMA_LIFCR_CTEIF3  |
+                  DMA_LIFCR_CDMEIF3 |
+                  DMA_LIFCR_CFEIF3;
+
+    /* Drop any byte left in the SPI receiver, and clear OVR (DR then SR). */
+    while (SPI2->SR & SPI_SR_RXNE) { (void)SPI2->DR; }
+    (void)SPI2->SR;
+
+    DMA1_Stream3->CR  &= ~DMA_SxCR_CT;
+    DMA1_Stream3->NDTR = SPI2_TRANSACTION_BYTES;
+    DMA1_Stream3->CR  |= DMA_SxCR_EN;
+
+    cnt_rx_realign++;
+}
+
 void EXTI15_10_IRQHandler(void)
 {
     if (!(EXTI->PR & (1u << PIN_RPI_NSS))) return;
@@ -447,6 +481,9 @@ void EXTI15_10_IRQHandler(void)
 
     EXTI->PR = (1u << PIN_RPI_NSS);
     cnt_cs++;
+
+    if (DMA1_Stream3->NDTR != SPI2_TRANSACTION_BYTES)
+        spi2_rx_realign();
 
     ISR_TIME_END(ISR_T_EXTI, ISR_PIN_EXTI);
 }

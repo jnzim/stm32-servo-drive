@@ -25,7 +25,7 @@
 //                         accel_max is exceeded
 #define TRAJ_PROFILE_TRAP     0
 #define TRAJ_PROFILE_MINJERK  1
-#define TRAJ_PROFILE          TRAJ_PROFILE_MINJERK
+#define TRAJ_PROFILE          TRAJ_PROFILE_TRAP
 
 // =============================================================================
 // Sysid test selector
