@@ -1,6 +1,6 @@
 // current_feedback.c — 3-phase current sense via DRV8353RS onboard shunt amps
 //
-// STM32F411/F446 bare metal
+// STM32F411 bare metal
 //
 // Hardware:
 //   PC0 / ADC1_IN10 -> ISENA

@@ -1,4 +1,4 @@
-// clock.h — system clock configuration for STM32F446RE
+// clock.h — system clock configuration for STM32F411RE
 #include "stm32f4xx.h"
 #pragma once
 
