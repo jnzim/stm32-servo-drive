@@ -40,4 +40,3 @@ bool current_feedback_sample_valid(void);
 uint32_t current_feedback_sample_count(void);
 uint32_t current_feedback_missed_count(void);
 
-static int adc_wait_jeoc_timeout(uint32_t timeout);
