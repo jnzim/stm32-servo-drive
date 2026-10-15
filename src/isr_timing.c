@@ -20,14 +20,13 @@ void isr_timing_init(void)
     DWT->CYCCNT       = 0u;
     DWT->CTRL        |= DWT_CTRL_CYCCNTENA_Msk;
 
-    /* PC5 / PC7 / PC8 as push-pull outputs, idle low. PC4 is left alone --
-     * current_feedback_init() already owns it as the ADC sample marker. */
+    /* PC4 / PC5 / PC7 / PC9 as push-pull outputs, idle low. */
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
     (void)RCC->AHB1ENR;
 
-    const uint32_t pins[3] = { ISR_PIN_TIM1, ISR_PIN_DMA3, ISR_PIN_EXTI };
+    const uint32_t pins[4] = { ISR_PIN_ADC, ISR_PIN_TIM1, ISR_PIN_DMA3, ISR_PIN_EXTI };
 
-    for (uint32_t i = 0u; i < 3u; i++)
+    for (uint32_t i = 0u; i < 4u; i++)
     {
         GPIOC->MODER   &= ~(3u << (pins[i] * 2u));
         GPIOC->MODER   |=  (1u << (pins[i] * 2u));   /* output */

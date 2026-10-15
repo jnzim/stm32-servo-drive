@@ -19,8 +19,7 @@
 // Budget: the control loop runs at 20kHz, so all four ISRs together have
 // 50us (5000 cycles @ 100MHz) per tick. CPU load = sum of rate x duration.
 //
-// Markers are on GPIOC. PC4 already existed as the ADC sample point
-// (current_feedback.c) and is reused as-is rather than duplicated.
+// Markers are on GPIOC, set up in isr_timing_init().
 
 #define ISR_T_TIM1      0u
 #define ISR_T_ADC       1u
@@ -29,7 +28,7 @@
 #define ISR_T_COUNT     4u
 
 #define ISR_PIN_TIM1    5u      /* PC5 */
-#define ISR_PIN_ADC     4u      /* PC4 -- pre-existing */
+#define ISR_PIN_ADC     4u      /* PC4 */
 #define ISR_PIN_DMA3    7u      /* PC7 */
 #define ISR_PIN_EXTI    9u      /* PC9 -- NOT PC8: that is PIN_DRV_CS, the
                                  * DRV8353 SPI1 chip select (board_f411.h:55) */

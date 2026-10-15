@@ -182,11 +182,6 @@ void current_feedback_init(void)
     GPIOC->PUPDR &= ~(3u << (PIN_CUR_B * 2u));
     GPIOC->PUPDR &= ~(3u << (PIN_CUR_C * 2u));
 
-    /* PC4 debug pulse — shows ADC sample point on scope */
-    GPIOC->MODER &= ~(3u << (4 * 2));
-    GPIOC->MODER |=  (1u << (4 * 2));    /* output */
-    GPIOC->BSRR   =  (1u << (4 + 16));   /* idle low */
-
     ADC->CCR  = ADC_CCR_ADCPRE_0;
 
     ADC1->CR1 = 0u;
