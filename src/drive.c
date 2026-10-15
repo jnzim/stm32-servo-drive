@@ -1,23 +1,17 @@
 // drive.c — servo drive state machine: IDLE -> SERVO_ON -> IDLE, plus FAULT
 //
-// Architecture:
-//   drive_sm_run() runs in SysTick at 1 kHz — only place state transitions happen.
-//   TIM1 ISR calls drive_get_state() to gate loop execution — reads only.
-//   DMA ISR calls drive_request_*() — sets flags only.
+// RUN_MODE_CLOSED_LOOP only (SysTick does not call drive_sm_run() in sysid).
 //
-// Initialization principle:
-//   State init runs at the *transition*, in the source state's transition
-//   path, BEFORE the new state is assigned. This matters because SysTick
-//   pops the ring after drive_sm_run() returns; if init were deferred to
-//   the entry tick of the destination state, it would wipe samples_consumed
-//   and first_sample_ready *after* SysTick had already advanced them on
-//   the transition tick, losing exactly one sample's count.
+//   drive_sm_run()  SysTick, 1 kHz. The only place the state changes.
+//   Readers         TIM1 ISR (foc_trajectory_step) and the position tick
+//                   check drive_is_servo_on() before running the loops.
+//   Requests        servo-on from the SPI DMA ISR on a MoveCmd; fault from
+//                   the position tick on a following-error trip. Both only
+//                   set a flag that drive_sm_run() acts on.
 
 #include "drive.h"
-#include "spi.h"
 #include "loops.h"
 #include "plant.h"
-#include "ringBuffer.h"
 #include "pwm.h"
 #include "config.h"
 #include "foc_trajectory.h"
@@ -44,7 +38,7 @@ bool drive_is_idle(void)      { return state == STATE_IDLE; }
 bool drive_is_servo_on(void)  { return state == STATE_SERVO_ON; }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Request functions — called from DMA ISR or any ISR
+// Request functions — set a flag; drive_sm_run() acts on it next tick
 // ─────────────────────────────────────────────────────────────────────────────
 void drive_request_servo_on(void)
 {
@@ -86,11 +80,9 @@ void drive_sm_run(void)
         {
             servo_on_req = 0;
 
-            // ── SERVO_ON init — runs at transition, NOT on entry tick ──
-            // This MUST precede the state assignment below: SysTick will
-            // call ring_pop() immediately after drive_sm_run() returns
-            // this tick, and any reset of samples_consumed / first_sample_ready
-            // must happen before that pop, not after it.
+            // Reset before entering SERVO_ON. SysTick runs the position
+            // tick right after this returns, and that tick sets
+            // first_sample_ready and counts samples_consumed for the move.
             loops_reset();
 #ifdef SIM_MODE
             plant_init(&plant);
@@ -103,21 +95,9 @@ void drive_sm_run(void)
         }
         break;
 
-    // ── SERVO_ON — closed-loop FOC with trajectory from Pi ───────────────────
-    // Init happens at transition in the IDLE case above, not here.
-    // This block only runs the running-state logic + the drain check.
-    //
-    // RUN_MODE_SYSID drains the ring/sample-count as before -- unrelated to
-    // this rebuild. RUN_MODE_CLOSED_LOOP has no ring being drained, so its
-    // exit is real completion: the trapezoidal generator reporting DONE.
+    // ── SERVO_ON — loops run; back to IDLE when the move generator is done ──
     case STATE_SERVO_ON:
-#if RUN_MODE == RUN_MODE_SYSID
-        if ((expected_samples > 0u && samples_consumed >= expected_samples) ||
-            (expected_samples == 0u &&
-             ring_count() == 0u && first_sample_ready && samples_consumed > 0))
-#else
         if (!foc_trajectory_move_active())
-#endif
         {
             pwm_disable();
             state              = STATE_IDLE;
@@ -129,12 +109,9 @@ void drive_sm_run(void)
         }
         break;
 
-    // ── FAULT — latched, PWM disabled ────────────────────────────────────────
-    // DRV8353RS already killed gate outputs when nFAULT asserted.
-    // Requires fault reset opcode from Pi to recover → STATE_IDLE.
+    // ── FAULT — latched, PWM off. Only a reset clears it. ───────────────────
     case STATE_FAULT:
         pwm_disable();
-        // TODO: SPI2_OP_FAULT_RESET → pulse ENABLE low 20µs → STATE_IDLE
         break;
     }
 }
