@@ -1,5 +1,7 @@
 #include "encoder.h"
+#include "config.h"
 #include "stm32f4xx.h"
+#include <math.h>
 
 // Hardware mapping
 #define ENC_TIM              TIM2
@@ -200,3 +202,20 @@ void encoder_update(uint32_t timestamp_ms)
     last_position = current;
 }
 
+
+// =============================================================================
+// encoder_elec_angle — electrical angle relative to the alignment offset
+// =============================================================================
+float encoder_elec_angle(int32_t offset)
+{
+    int32_t raw = encoder_get_position() - offset;
+
+    float theta_mech = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
+    float theta_elec = ENC_DIR * theta_mech * (float)MOTOR_POLE_PAIRS;
+
+    theta_elec = fmodf(theta_elec, FOC_TWO_PI);
+    if (theta_elec < 0.0f)
+        theta_elec += FOC_TWO_PI;
+
+    return theta_elec;
+}

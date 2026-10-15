@@ -80,23 +80,6 @@ float foc_vq_applied = 0.0f;
 float foc_vd_applied = 0.0f;
 float foc_iq_meas     = 0.0f;  // real i_q feedback, exposed for telemetry in SysTick
 
-// =============================================================================
-// foc_theta_from_encoder — electrical angle relative to alignment offset
-// =============================================================================
-
-static float foc_theta_from_encoder(void)
-{
-    int32_t raw = encoder_get_position() - traj_enc_offset;
-
-    float theta_mech = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
-    float theta_elec = ENC_DIR * theta_mech * (float)MOTOR_POLE_PAIRS;
-
-    theta_elec = fmodf(theta_elec, FOC_TWO_PI);
-    if (theta_elec < 0.0f)
-        theta_elec += FOC_TWO_PI;
-
-    return theta_elec;
-}
 
 // =============================================================================
 // foc_trajectory_step — called from TIM1_UP_TIM10_IRQHandler at 20 kHz
@@ -134,7 +117,7 @@ void foc_trajectory_step(void)
             if (!current_feedback_sample_valid())
                 return;
 
-            float theta = foc_theta_from_encoder();
+            float theta = encoder_elec_angle(traj_enc_offset);
 
             // ── Current feedback ─────────────────────────────────────────────
             float i_d_meas;

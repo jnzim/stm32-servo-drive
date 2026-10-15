@@ -123,25 +123,6 @@ static float vel_meas_counts = 0.0f;   // measured velocity [counts/s] — raw f
 
 
 // =============================================================================
-// foc_theta_from_encoder — electrical angle relative to alignment offset
-// =============================================================================
-
-static float foc_theta_from_encoder(void)
-{
-    int32_t raw = encoder_get_position() - sysid_enc_offset;
-
-    float theta_mech = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
-    float theta_elec = ENC_DIR * theta_mech * (float)MOTOR_POLE_PAIRS;
-
-    theta_elec = fmodf(theta_elec, FOC_TWO_PI);
-    if (theta_elec < 0.0f)
-        theta_elec += FOC_TWO_PI;
-
-    return theta_elec;
-}
-
-
-// =============================================================================
 // run_voltage_test
 // =============================================================================
 
@@ -233,7 +214,7 @@ static float cl_current_chirp_angle_rad = 0.0f;
 
 static void run_cl_current_chirp(void)
 {
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -286,7 +267,7 @@ static void run_cl_current_chirp(void)
 static void run_vel_chirp(void)
 {
     
-    const float theta = foc_theta_from_encoder();
+    const float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -362,7 +343,7 @@ static void run_vel_chirp(void)
 static void run_cl_current_step(void)
 {
 
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid())
         return;
@@ -448,7 +429,7 @@ static void run_cl_current_step(void)
 static uint32_t vel_loop_tick = 0;
 static void run_cl_vel_step(void)
 {
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -561,7 +542,7 @@ static int32_t            friction_sweep_start_pos = 0;
 
 static void run_friction_sweep(void)
 {
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -715,7 +696,7 @@ static int32_t          breakaway_start_pos   = 0;
 
 static void run_breakaway(void)
 {
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -913,7 +894,7 @@ static PIState vel_plant_id_loop;
 
 static void run_cl_vel_chirp(ClVelController ctrl)
 {
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -1034,7 +1015,7 @@ static float    pos_meas_rad    = 0.0f;
 
 static void run_position_step(void)
 {
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -1151,7 +1132,7 @@ static float    cl_pos_chirp_angle_rad = 0.0f;
 
 static void run_cl_pos_chirp(void)
 {
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -1247,7 +1228,7 @@ static float    cine_sweep_angle   = 0.0f;
 
 static void run_cine_sweep(void)
 {
-    float theta = foc_theta_from_encoder();
+    float theta = encoder_elec_angle(sysid_enc_offset);
 
     if (!current_feedback_sample_valid()) { return; }
 
@@ -1495,9 +1476,6 @@ void foc_sysid_step(void)
         break;
 
 
-
-
-
         case SYSID_STAGE_RUN:
         {
             /* ADC stall watchdog -- current_feedback_sample_count() only
@@ -1590,7 +1568,7 @@ void foc_sysid_step(void)
 #if SYSID_TEST == SYSID_TEST_CURRENT_LOOP_CHIRP
     float theta_telem = 0.0f;
 #else
-    float theta_telem = foc_theta_from_encoder();
+    float theta_telem = encoder_elec_angle(sysid_enc_offset);
 #endif
 
     int32_t enc_pos = encoder_get_position();
