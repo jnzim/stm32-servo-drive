@@ -1,8 +1,6 @@
 #include "loops.h"
 #include "control.h"
 #include "spi.h"
-#include "pwm.h"
-#include <math.h>
 #include "config.h"
 
 
@@ -166,17 +164,4 @@ float velocity_loop_step(float vel_cmd_rad_sec, float vel_meas_rad, float dt)
           (FRICTION_FF_VISCOUS_MA_PER_RADS * 0.001f) * vel_cmd_rad_sec;
 
     return iq;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// open_loop_step — not called (the drive state machine has no open-loop state)
-//
-// Advances electrical angle by d_theta per call, applies rotating voltage
-// vector at magnitude v_mag with v_d=0. No closed-loop feedback.
-// ─────────────────────────────────────────────────────────────────────────────
-void open_loop_step(float *theta, float v_mag, float d_theta)
-{
-    *theta += d_theta;
-    if (*theta >= 2.0f * M_PI) *theta -= 2.0f * M_PI;
-    pwm_apply_dq(0.0f, v_mag, *theta);
 }

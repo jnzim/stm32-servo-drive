@@ -31,6 +31,3 @@ void loops_reset(void);
 // Velocity PI + friction feedforward, single source of truth for both sysid
 // tests and real trajectory mode. See loops.c for the full rationale.
 float velocity_loop_step(float vel_cmd_rad_sec, float vel_meas_rad, float dt);
-
-// Open-loop electrical drive — not called
-void open_loop_step(float *theta, float v_mag, float d_theta);
