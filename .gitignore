@@ -35,3 +35,6 @@ compile_commands.json
 Thumbs.db
 #=== Manual
 docs/*.pdf
+
+# ===== IDE =====
+.settings/

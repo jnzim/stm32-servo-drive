@@ -1,5 +1,0 @@
-{
-  "board": "NUCLEO-L476RG",
-  "device": "STM32L476RGT3",
-  "toolchain": "GCC"
-}
