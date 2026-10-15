@@ -11,9 +11,7 @@
 
 #include "drive.h"
 #include "loops.h"
-#include "plant.h"
 #include "pwm.h"
-#include "config.h"
 #include "foc_trajectory.h"
 #include <stdint.h>
 
@@ -84,9 +82,6 @@ void drive_sm_run(void)
             // tick right after this returns, and that tick sets
             // first_sample_ready and counts samples_consumed for the move.
             loops_reset();
-#ifdef SIM_MODE
-            plant_init(&plant);
-#endif
             first_sample_ready = 0;
             samples_consumed   = 0;
             pwm_enable();
