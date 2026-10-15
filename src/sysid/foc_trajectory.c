@@ -7,13 +7,9 @@
 //               align stage (d-axis lock, encoder offset capture)
 //               current loop  (pi_step, real i_q_meas feedback)
 //               velocity loop decimated /4 → 5 kHz
-//   1 kHz   SysTick   → position loop + ring_pop() → writes vel_cmd_rad_sec
+//   1 kHz   SysTick   → move generator + position loop → writes vel_cmd_rad_sec
 //
-// Gains in loops_reset() (loops.c) are tuned from confirmed sysid params:
-//   R = 3.55 Ω,  L = 2.47 mH,  fc_plant = 229 Hz
-//   Current loop target fc = 1 kHz
-//   Kp = 2π × 1000 × L = 15.52
-//   Ki = Kp × R/L       = 22306
+// Gains: config.h (CURRENT_LOOP_*, VEL_*, POSITION_LOOP_KP).
 
 #include "foc_trajectory.h"
 #include "observer.h"

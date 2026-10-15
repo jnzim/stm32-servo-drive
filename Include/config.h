@@ -251,7 +251,7 @@
 // bode_plot.py + SYSID_TEST_CL_CURRENT_CHIRP again if R/L is ever
 // re-measured, rather than trusting this citation indefinitely either.
 // Same gains used for both current_loop (q-axis) and d_current_loop --
-// Ld ~= Lq for this machine (see loops.c).
+// Ld ~= Lq for this machine.
 // =============================================================================
 
 // Current loop, designed 2026-09-22 against a measured plant.
@@ -302,6 +302,24 @@
 // faster and now has a measured plant behind it.
 #define CURRENT_LOOP_KP  3.30f      // V/A
 #define CURRENT_LOOP_KI  5435.0f    // V/(A*s)
+
+// =============================================================================
+// Velocity loop
+// =============================================================================
+
+// PI on the observer velocity, loaded stage. Plant from the P-only chirp
+// (SYSID_TEST_CL_VEL_PLANT_CHIRP): K = 177.2 rad/s/A, tau = 14.19 ms, pole
+// at 11.2Hz. Ki = Kp * 2*pi*11.2 puts the PI zero on that pole.
+// Measured closed loop: crossover 116.9Hz, PM 67.0deg.
+#define VEL_KP        0.09000f   // A / (rad/s)
+#define VEL_KI        6.3400f    // A / rad
+
+// Velocity PI output clamp. The motor's 2.91A rating is continuous (RMS,
+// thermal), not a peak limit: on a 0.15 rad position chirp iq ran 0.73A RMS
+// with 3.0A peaks. 3.5A stays inside the current-sense range (saturates near
+// 5.9A). Friction feedforward is added after this clamp. The bench supply
+// must allow 3.5A peaks at 24V.
+#define VEL_IQ_LIMIT  3.5f       // A
 
 // =============================================================================
 // FOC bring-up voltages
@@ -405,12 +423,7 @@
 // controller a known memoryless gain C(s)=Kp, so the plant can be backed out
 // of the measured closed-loop response with a single division:
 //   H = CP/(1+CP)  =>  L = H/(1-H)  =>  P = L / Kp
-// Same value used for the bare-motor identification (loops.c:9-31,
-// Kp=0.0239, coherence ~1.0 to ~150Hz there). Re-used as the starting point
-// for the stage-loaded re-identification -- peak iq_cmd = Kp*AMPLITUDE =
-// 0.0239*8 = 0.19A, well under VEL_IQ_LIMIT=0.5A (loops.c), so headroom
-// exists to raise CL_VEL_CHIRP_AMPLITUDE later if the stage's response is
-// too small to fit well.
+// Peak iq_cmd = Kp*AMPLITUDE = 0.0239*15 = 0.36A, well under VEL_IQ_LIMIT.
 #define CL_VEL_CHIRP_PONLY_KP    0.0239f
 
 // Two tests share the closed velocity loop chirp; they differ only in the
@@ -556,8 +569,7 @@
 // already-validated ~94mA kinetic friction current instead of continuing
 // to push whatever torque the ramp had built up.
 // =============================================================================
-#define BREAKAWAY_IQ_CEILING           0.5f   // A -- matches VEL_IQ_LIMIT (loops.c),
-                                               // already validated safe elsewhere
+#define BREAKAWAY_IQ_CEILING           0.5f   // A
 #define BREAKAWAY_RAMP_DURATION        5.0f   // s, 0 -> ceiling (0.1A/s)
 #define BREAKAWAY_DETECT_THRESH_RAD_S  1.0f   // rad/s -- above the ~0.77 rad/s
                                                // idle jitter ceiling observed
@@ -621,7 +633,7 @@
 // Was reverted to 200 (the last value with a clean, quiet step response)
 // on the STAGE-ATTACHED config -- that history stands, but doesn't
 // directly apply here since VEL_KP/KI were just re-designed against a
-// fresh bare-motor plant (see loops.c) and closed-loop verified
+// fresh bare-motor plant and closed-loop verified
 // (gc=44.6Hz, PM=69.2deg, GM=15.1dB, BW=80.4Hz).
 //
 // Re-derived as a frequency-ratio design instead: pick outer crossover at
