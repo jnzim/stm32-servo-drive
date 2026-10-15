@@ -18,7 +18,6 @@ add_executable(fw.elf
     src/drive.c
     src/loops.c
     src/clock.c
-    src/tim1.c
     src/pwm.c
     src/drv8353.c
     src/system_stm32f4xx.c

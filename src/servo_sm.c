@@ -5,7 +5,6 @@
 
 #include "clock.h"
 #include "spi.h"
-#include "tim1.h"
 #include "drive.h"
 #include "ringBuffer.h"
 #include "loops.h"
