@@ -2,18 +2,14 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <math.h>
 
 #include "clock.h"
 #include "spi.h"
 #include "drive.h"
 #include "ringBuffer.h"
-#include "loops.h"
-#include "protocol.h"
 #include "config.h"
 #include "encoder.h"
 #include "drv8353.h"
-#include "board_f411.h"
 #include "pwm.h"
 #include "current_feedback.h"
 #include "foc_sysid.h"
@@ -23,32 +19,18 @@
 
 volatile uint32_t tick_ms          = 0;
 
-// Free-running 20kHz control-tick counter. Stamped into every telemetry frame
-// as SysIdSample.t, which makes t an exact timestamp in 50us units rather than
-// a count of anything. It replaced a per-publish sequence counter: publishes
-// only happen on ticks where the Pi's NSS is idle, so that counter advanced at
-// ~10.7kHz on a 20kHz loop and consecutive frames were 1, 2 or 3 ticks apart
-// with no way to tell which. Every frequency axis in the project was being
-// built on either that or the Pi's arrival timestamp, neither of which is a
-// sample time. Wraps after ~59.6 hours.
+// 20kHz control-tick counter, stamped into every telemetry frame as the
+// sample time (50us units). Wraps after ~59.6 hours.
 volatile uint32_t g_control_tick   = 0;
 volatile bool     system_initialized = false;
 
-// Captured first thing in main(), before anything else touches RCC.
-// RCC->CSR reset-cause flags (PORRSTF/BORRSTF/PINRSTF/SFTRSTF/IWDGRSTF/
-// WWDGRSTF/LPWRRSTF, top byte) are latched and persist across non-POR
-// resets until software explicitly clears them (RMVF) -- deliberately
-// never cleared here, so this accumulates the OR of every reset cause
-// since the last real power-cycle. Wired into ALIGN-stage telemetry
-// (foc_sysid.c) to check whether CL_VEL_CHIRP/VEL_CHIRP instability events
-// are actually browning out or otherwise resetting the MCU, without
-// relying on the debugger (register-view has been unreliable this session).
+// RCC->CSR reset-cause flags, captured before anything touches RCC. Never
+// cleared (RMVF), so this is the OR of every reset cause since power-up.
+// Reported in sysid ALIGN-stage telemetry (foc_sysid.c).
 volatile uint32_t g_reset_cause    = 0;
 
-// Captured once, right after drv_enable_high(), so a genuinely faulted
-// half-bridge (nFAULT/FAULT_STATUS_1/VGS_STATUS_2) shows up even without
-// PWM ever running -- doesn't rely on the debugger's register view (see
-// g_reset_cause above). Wired into ALIGN-stage telemetry (foc_sysid.c).
+// DRV8353 fault registers, read once right after drv_enable_high(), before
+// PWM runs. Reported in sysid ALIGN-stage telemetry (foc_sysid.c).
 volatile uint16_t g_drv_fault_status_1 = 0;
 volatile uint16_t g_drv_vgs_status_2   = 0;
 volatile bool     g_drv_nfault_pin_ok  = false;
@@ -76,17 +58,9 @@ void TIM1_UP_TIM10_IRQHandler(void)
 }
 
 // =============================================================================
-// SysTick_Handler — 1 kHz. Drive state machine + position tick --
-// deliberately NOT in the 20kHz TIM1 ISR, per the architecture already
-// documented across drive.c and foc_trajectory.h. Priority set explicitly
-// below so this can never preempt the real-time control loop.
-//
-// foc_trajectory_position_tick() is called every tick, not just while
-// servo is on: it only actually runs the generator/position loop when
-// servo-on, but it always reports telemetry -- calling it conditionally
-// meant the exact tick that flips drive_state to IDLE (inside
-// drive_sm_run(), just above) never got a telemetry report for that new
-// state, so the Pi never saw completion.
+// SysTick_Handler — 1 kHz, lowest priority. Drive state machine and position
+// tick. The position tick runs every tick, not only while servo-on, because
+// it always sends telemetry; that is how the Pi sees the drive return to IDLE.
 // =============================================================================
 void SysTick_Handler(void)
 {
@@ -95,10 +69,7 @@ void SysTick_Handler(void)
     if (!system_initialized)
         return;
 
-    // Trajectory mode only. In RUN_MODE_SYSID the drive state machine and the
-    // position tick have nothing to run -- foc_sysid_step() owns the motor --
-    // and the position tick's spi_update_telem() does not exist there, since
-    // sysid sends SysIdSample frames instead.
+    // Trajectory mode only; in sysid, foc_sysid_step() owns the motor.
 #if RUN_MODE != RUN_MODE_SYSID
     drive_sm_run();
     foc_trajectory_position_tick();
@@ -111,7 +82,7 @@ int main(void)
 
     g_reset_cause = RCC->CSR;   // capture before anything else can touch RCC
 
-    // Enable full access to FPU coprocessors CP10 and CP11. */
+    // Enable full access to FPU coprocessors CP10 and CP11.
     SCB->CPACR |= ((3UL << (10u * 2u)) | (3UL << (11u * 2u)));
 
     // Barrier required before any FPU instruction (like __set_FPSCR below) --
@@ -119,20 +90,9 @@ int main(void)
     __DSB();
     __ISB();
 
-    // Flush-to-zero -- the hardware FPU takes a much slower software-assisted
-    // path on denormal (subnormal) operands, sometimes 10-20x a normal
-    // single-cycle op. Suspected cause of the VEL_CHIRP ISR slowdown (chirp
-    // phase math accumulates many small floating-point values over a long
-    // sweep). FZ has no cost here -- sub-normal precision is irrelevant for
-    // control math.
+    // Flush-to-zero: denormal operands are slow on the FPU, and their
+    // precision does not matter for control math.
     __set_FPSCR(__get_FPSCR() | (1u << 24));
-
-    // DWT cycle counter -- passive per-tick timing diagnostics with no
-    // debugger attached (SWD halts/polling would perturb the exact timing
-    // we're trying to measure).
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT->CYCCNT = 0;
-    DWT->CTRL  |= DWT_CTRL_CYCCNTENA_Msk;
 
     clock_init();
     encoder_init();
@@ -142,15 +102,11 @@ int main(void)
 #endif
     ring_init();
 
-    // GPIOC clock -- normally enabled by spi_init(), which also owns PC13/PC4.
-    // PC3 below (the GPIO start-trigger wait) needs it regardless of whether
-    // SPI telemetry is compiled in; current_feedback_init() enables it too,
-    // but not until after this wait loop, so it can't be relied on here.
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
-    (void)RCC->AHB1ENR;
-
+    // DWT cycle counter, GPIOC clock, and the ISR marker pins.
     isr_timing_init();
 
+    // Wait for the Pi's start signal on PC3 (input, pull-up): wait for high,
+    // then for the Pi to pull it low. Nothing past here runs until then.
     GPIOC->MODER &= ~(3u << (3u * 2u));
     GPIOC->PUPDR &= ~(3u << (3u * 2u));
     GPIOC->PUPDR |=  (1u << (3u * 2u));
@@ -160,12 +116,6 @@ int main(void)
 
     drv8353_init();
     drv8353_configure();
-
-#if RUN_MODE == RUN_MODE_SYSID
-    volatile uint16_t csa_ctrl = drv8353_read_reg(DRV8353_REG_CSA_CONTROL);
-    csa_ctrl = drv8353_read_reg(DRV8353_REG_CSA_CONTROL);
-    (void)csa_ctrl;
-#endif
 
     pwm_init();
     current_feedback_init();
@@ -184,21 +134,10 @@ int main(void)
 
     SysTick_Config(SystemCoreClock / 1000u);
 
-    // Strictly lower priority (higher number) than the 20kHz control loop
-    // (TIM1_UP_TIM10_IRQn=0, pwm.c) and everything else (ADC=1, DMA1_Stream3/
-    // EXTI15_10=2) -- SysTick must never preempt real-time control. 15 is
-    // what ringBuffer.c's own comment already anticipates for this.
+    // Lowest priority: TIM1 update is 0, ADC 1, SPI DMA/EXTI 2.
     NVIC_SetPriority(SysTick_IRQn, 15);
 
     system_initialized = true;
-
-    // Bench-test scaffolding (forced SERVO_ON + a hardcoded move, no SPI
-    // involved) is gone now that the real path is wired: DMA1_Stream3_
-    // IRQHandler (spi.c) parses SPI2_OP_MOVE_CMD and calls
-    // foc_trajectory_start_move() + drive_request_servo_on() itself, driven
-    // by whatever the Pi actually sends. drive.c's STATE_SERVO_ON exit
-    // checks foc_trajectory_move_active() (generator DONE) instead of the
-    // expected_samples placeholder that scaffolding needed.
 
     while (1)
     {
