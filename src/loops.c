@@ -169,7 +169,7 @@ float velocity_loop_step(float vel_cmd_rad_sec, float vel_meas_rad, float dt)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// open_loop_step — called from TIM1 ISR when STATE_OPEN_LOOP active
+// open_loop_step — not called (the drive state machine has no open-loop state)
 //
 // Advances electrical angle by d_theta per call, applies rotating voltage
 // vector at magnitude v_mag with v_d=0. No closed-loop feedback.

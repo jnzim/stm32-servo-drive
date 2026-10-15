@@ -32,5 +32,5 @@ void loops_reset(void);
 // tests and real trajectory mode. See loops.c for the full rationale.
 float velocity_loop_step(float vel_cmd_rad_sec, float vel_meas_rad, float dt);
 
-// Open-loop electrical drive — called from TIM1 ISR when STATE_OPEN_LOOP active
+// Open-loop electrical drive — not called
 void open_loop_step(float *theta, float v_mag, float d_theta);
