@@ -46,13 +46,3 @@ void clock_init(void)
     // ── Update CMSIS core clock variable ──────────────────────────────────────
     SystemCoreClock = 100000000u;
 }
-
-
-// In clock.c or a utility file
-void delay_ms(uint32_t ms)
-{
-    // At 100 MHz, 1ms = 100,000 cycles
-    // Each loop iteration ≈ 3-4 cycles with optimization
-    for (uint32_t i = 0u; i < ms; i++)
-        for (volatile uint32_t d = 0u; d < 25000u; d++);
-}
