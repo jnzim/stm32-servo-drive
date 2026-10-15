@@ -28,7 +28,7 @@
 //     nFAULT high = no fault
 //     nFAULT low  = fault active
 //
-//   Future PWM TIM1:
+//   PWM TIM1:
 //     PA8  / TIM1_CH1 -> DRV PWM_A / INHA
 //     PA9  / TIM1_CH2 -> DRV PWM_B / INHB
 //     PA10 / TIM1_CH3 -> DRV PWM_C / INHC

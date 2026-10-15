@@ -80,7 +80,7 @@ typedef struct __attribute__((packed))
  * TrajSlot — 32 bytes (fixed-size, DMA-aligned)
  *
  * Pi generates trajectory at 1 kHz, sends 32-byte slots to STM.
- * Ring buffer: 4096 bytes / 32 bytes per slot = 128 slots exact.
+ * Ring buffer: RING_BUFFER_SIZE (2048) slots of 32 bytes.
  * DMA wrap always lands on slot boundary — no partial packets.
  *
  * Structure:
@@ -110,8 +110,8 @@ typedef struct __attribute__((packed)) {
 /* =============================================================================
  * MoveCmd — 32 bytes, sent once per move (SPI2_OP_MOVE_CMD)
  *
- * Pi -> STM: one command per move. The STM generates the trapezoidal
- * profile itself (trap_gen.c) from these three numbers -- no streaming.
+ * Pi -> STM: one command per move. The STM generates the profile itself
+ * (trap_gen.c or minjerk_gen.c, per TRAJ_PROFILE) from these three numbers.
  *
  * Structure:
  *   [0]      opcode (0x07 = MOVE_CMD)

@@ -196,7 +196,7 @@ void drv8353_init(void)
     //
     // STM32F411 SPI1 is on APB2.
     // BR = 111 means f_PCLK / 256.
-    // If APB2 = 84 MHz, SPI clock ≈ 328 kHz.
+    // APB2 = 100 MHz, so SPI clock ≈ 390 kHz.
     // Conservative for breadboard + long jumpers + LA capacitance with
     // 4.7k pull-up on open-drain SDO. Bump to /128 or /64 once verified.
     // -------------------------------------------------------------------------
@@ -323,7 +323,7 @@ Drv8353Status drv8353_read_status(void)
 //
 // Field encodings below are from the DRV8353 datasheet (SLVSDJ3) register
 // tables. IDRIVE/VDS_LVL codes: VERIFY against your datasheet revision's
-// tables once before first powered FET switching. Harmless until PWM wired.
+// tables if the configuration is ever changed.
 //
 // Configuration intent:
 //   0x02  3x PWM mode (INHx = PWM, INLx = per-phase enable)
@@ -332,7 +332,7 @@ Drv8353Status drv8353_read_status(void)
 //   0x05  latched OCP for bring-up, 100 ns dead time, VDS at default 0.75 V
 //         (50/100/400 ns all gave the same ripple in the foc-sysid
 //         RIPPLE_DEBUG dead-time sweep — back to the original default)
-//   0x06  bidirectional CSA, GAIN = 40 V/V  <-- i_q scaling referenceƒ
+//   0x06  bidirectional CSA, GAIN = 40 V/V  <-- i_q scaling reference
 //
 // Current scaling with this config:
 //   I_phase = (V_SOx - VREF/2) / (40 V/V * R_shunt)

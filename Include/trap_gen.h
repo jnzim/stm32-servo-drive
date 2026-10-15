@@ -5,7 +5,7 @@
 // if the move is too short to reach it), holds, then ramps back down to
 // stop exactly at the target. All units are the caller's choice (this file
 // only does the math) — foc_trajectory.c uses encoder counts / counts-per-
-// second, matching the wire units the Pi will eventually send.
+// second, the units the Pi sends in MoveCmd.
 //
 // Usage: trap_gen_start() once, then trap_gen_step() every tick until
 // trap_gen_active() returns false.

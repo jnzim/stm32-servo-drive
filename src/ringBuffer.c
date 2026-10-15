@@ -1,3 +1,8 @@
+// ringBuffer.c — single-producer / single-consumer ring of TrajSlot frames,
+// for streaming a trajectory from the Pi. Not used at present: moves arrive
+// as one MoveCmd and the profile is generated on the STM. Only ring_init()
+// is called (main.c).
+
 #include "ringBuffer.h"
 #include "stm32f4xx.h"
 
@@ -9,19 +14,14 @@ void ring_init(void)
     ring.read_idx  = 0;
 }
 
-/* Writer-side only. The Pi protocol guarantees the reader path is dormant
- * here: BLOCK_HDR arrives while drive SM is in IDLE, so drive_is_servo_on()
- * is false and SysTick will not pop. Setting write_idx = read_idx empties
- * the ring atomically from the writer's perspective without touching the
- * reader's counter. */
+/* Writer side only: empties the ring without touching the reader's index.
+ * Call only while the reader is not popping. */
 void ring_reset(void)
 {
     ring.write_idx = ring.read_idx;
 }
 
-/* Single writer (DMA1_Stream3 ISR, priority 2). */
-/* DMA ISR — called when SPI block arrives */
-/* ringBuffer.c */
+/* Never set at present, so ring_get_crc_error() returns 0. */
 static uint8_t traj_crc_error = 0;
 
 
@@ -76,9 +76,8 @@ int ring_pop(TrajSlot* s)
 }
 
 
-/* Slightly stale by definition; correct for READY-threshold and telemetry.
- * Monotonic uint32_t subtraction works across wrap as long as the live
- * difference is well below BUFFER_SIZE. */
+/* Slots waiting. Unsigned subtraction works across index wrap as long as
+ * the live difference stays below RING_BUFFER_SIZE. */
 uint32_t ring_count(void)
 {
     uint32_t w = ring.write_idx;

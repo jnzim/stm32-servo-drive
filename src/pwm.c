@@ -223,6 +223,10 @@ void pwm_disable(void)
 
 // =============================================================================
 // pwm_set_duty — write one phase CCR
+//
+// Phase 1 (B) goes to CCR3 (PA10) and phase 2 (C) to CCR2 (PA9), swapped
+// from the PIN_PWM_B/C names in board_f411.h. Every loop was identified and
+// tuned with this mapping; changing it reverses the commutation order.
 // =============================================================================
 
 static void pwm_set_duty(uint8_t phase, uint16_t duty)

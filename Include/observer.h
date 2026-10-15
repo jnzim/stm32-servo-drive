@@ -41,7 +41,7 @@
 //     disturbance_hat  += Ts*(                                      - gain_dist*pos_error )
 //
 // Every term inside a bracket has the units of that state's derivative; that
-// is the check that the gains are dimensionally right. The l*pos_error terms are
+// is the check that the gains are dimensionally right. The gain_*·pos_error terms are
 // corrections injected as RATES, not writes to the state -- this is a control
 // loop whose plant is the model and whose setpoint is the sensor.
 //
@@ -69,13 +69,11 @@
 //
 // K and tau differ by more than 2x between them; K/tau agrees to 5%.
 //
-// A properly identified value does NOT work here. 11900 comes from the only
-// valid back-out (DEPLOYED=0, where C(s) really is the constant the identity
-// assumes); 19800 came from a DEPLOYED=1 run, which config.h explicitly warns
-// is meaningless because C(s) is a PI plus a feedforward path. So the number in
-// use has an invalid derivation and the correct one is unusable: at 11900 the
-// velocity loop went unstable, swinging +-52 rad/s against a +-15 rad/s command
-// and driving the stage into its hard stops (2026-10-06).
+// The value in use is NOT the identified one. 11900 comes from the valid
+// P-only back-out; 19800 came from a run with the deployed PI in the loop,
+// where the back-out is not valid. But at 11900 the velocity loop went
+// unstable, swinging +-52 rad/s against a +-15 rad/s command and driving the
+// stage into its hard stops (2026-10-06).
 //
 // The mechanism is not understood. Naively a smaller model term should lean
 // the estimate harder on the encoder correction and behave more like the old
@@ -96,28 +94,19 @@
 // together. High: tracks the encoder hard and inherits its quantization noise.
 // Low: trusts the model, smooth but slow onto real disturbances.
 //
-// 300 -> 800 (2026-10-06). The velocity loop caught up with the estimator. At
-// 2x velocity gains its crossover reached 170Hz, which is only 1.8x the 300Hz
-// observer -- the usual requirement is 3-5x, or the estimator's own dynamics
-// sit inside the loop's bandwidth and omega_hat stops tracking the real motion
-// where it matters. That showed up as a loop which looked excellent measured
-// through the observer (gc 170Hz, PM 103deg) while real motion, measured
-// through the encoder, got slightly WORSE than the boxcar baseline
-// (168.8 -> 148.3Hz). Regulating an estimate only works while the estimate is
-// right. 800Hz restores ~5x separation.
-//
-// The cost is inheriting more encoder quantization, which shows up as
-// roughness at low speed -- check POSITION_STEP for buzz at rest if this gets
-// raised further.
+// 800Hz keeps the observer 3-5x above the velocity loop's bandwidth. At 300Hz
+// the loop looked excellent measured through the observer while real motion,
+// measured through the encoder, got worse: regulating an estimate only works
+// while the estimate is right. Higher values inherit more encoder
+// quantization (roughness and buzz at low speed).
 #define OBS_WO_HZ   800.0f
 
 // Selects what the VELOCITY LOOP consumes. 0 = the encoder boxcar, i.e. the
 // long-standing behaviour. 1 = the observer.
 //
-// Telemetry is deliberately unaffected: vel_meas_counts keeps carrying the
-// boxcar, so a capture still logs both estimates side by side regardless of
-// which one is in the loop. That is what makes the A/B honest -- flipping this
-// changes the control path and nothing else.
+// In sysid telemetry the boxcar stays in the last slot and the velocity
+// chirps (tests 6/14) also send the observer in enc_lo, so one capture logs
+// both whichever is in the loop.
 #define VEL_LOOP_USES_OBSERVER 1
 
 #if VEL_LOOP_USES_OBSERVER && !OBSERVER_ENABLE

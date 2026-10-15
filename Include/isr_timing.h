@@ -31,14 +31,14 @@
 #define ISR_PIN_ADC     4u      /* PC4 */
 #define ISR_PIN_DMA3    7u      /* PC7 */
 #define ISR_PIN_EXTI    9u      /* PC9 -- NOT PC8: that is PIN_DRV_CS, the
-                                 * DRV8353 SPI1 chip select (board_f411.h:55) */
+                                 * DRV8353 SPI1 chip select (board_f411.h) */
 
 extern volatile uint32_t isr_cycles_last[ISR_T_COUNT];
 extern volatile uint32_t isr_cycles_max[ISR_T_COUNT];
 extern volatile uint32_t isr_calls[ISR_T_COUNT];
 
-// Enables the DWT cycle counter and configures the marker pins as outputs.
-// Call once at startup, after the GPIOC clock is on.
+// Enables the DWT cycle counter, the GPIOC clock, and the marker pins as
+// outputs. Call once at startup.
 void isr_timing_init(void);
 
 // Marker goes high before the timestamp so the BSRR write isn't charged to

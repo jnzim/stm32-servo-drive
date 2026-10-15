@@ -26,32 +26,10 @@ static int32_t last_position = 0;
 // ---------------------------------------------------------------------------
 // Velocity filter config
 // ---------------------------------------------------------------------------
-// Was 80, cut to 20 earlier tonight to fix a phase-margin problem in the
-// CLOSED velocity loop chirp (traced to this filter's group delay, not a
-// mechanical resonance -- see git history). That fix is still valid, but
-// N=20 was designed around a since-abandoned aggressive position loop
-// (Kp_pos=954.5, gc~70Hz) that needed the margin. With the position loop
-// back down to Kp_pos=200 (gc~15-20Hz) after SYSID_TEST_POSITION_STEP
-// showed continuous current/vq buzz at rest that persisted through BOTH a
-// current-loop gain revert AND the position-loop gain revert -- pointing
-// at this filter's noise (not either loop's gain) as the actual source --
-// there's now room to trade back some of the unneeded phase margin for a
-// quieter vel_meas.
-//
-// N=40 (2ms window, ~28 deg phase lag at 80Hz -- between N=20's ~13.7 and
-// the old N=80's ~58) is the compromise being tried. Re-check against
-// SYSID_TEST_CL_VEL_CHIRP (phase crossover/GM shouldn't collapse back
-// toward the original problem) and SYSID_TEST_POSITION_STEP (does the
-// buzz actually drop) before locking in.
-// 2026-09-19: back to N=20. With the load attached and Kp_pos=260 (gc 32.5Hz,
-// PM 47.4deg), the phase this filter costs matters again. Backing the plant out
-// of the measured loop (P = L/C) showed phase passing -90deg -- -88.7 at 50Hz,
-// -136.6 at 120Hz -- which a single-pole plant cannot do; the 2ms window's 1ms
-// group delay (0.36 deg/Hz, ~14deg at the 40Hz velocity crossover) accounts for
-// most of it, and for the ~1dB of extra magnitude droop above 10Hz.
-//
-// The noise trade that drove 40 is real: re-check SYSID_TEST_POSITION_STEP for
-// the buzz-at-rest that N=20 caused last time, now that the loop gains differ.
+// Boxcar velocity over the last VEL_FILTER_N count differences. Telemetry
+// and the friction sweep use it; the velocity loop runs on the observer
+// (VEL_LOOP_USES_OBSERVER), which has none of this filter's group delay
+// ((N-1)/2 samples, about 0.5 ms at N=20).
 #define VEL_FILTER_N  20   // 1 ms window
                            // resolution: 1 count/ms = 0.767 rad/s
                            // at 10 rad/s -> approximately 13 counts/ms

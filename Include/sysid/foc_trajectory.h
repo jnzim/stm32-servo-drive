@@ -6,8 +6,8 @@
 //   - d-axis alignment stage
 //   - closed current loop  @ 20 kHz
 //   - closed velocity loop @ 5 kHz
-//   - position loop and ring buffer pop live in SysTick @ 1 kHz
-//     and write vel_cmd_rad_sec via loops.h — this file consumes it
+//   - move generator and position loop live in SysTick @ 1 kHz
+//     (foc_trajectory_position_tick) and write vel_cmd_rad_sec via loops.h
 
 #pragma once
 
@@ -17,7 +17,7 @@
 // foc_trajectory_step — call from TIM1 ISR at 20 kHz, RUN_MODE_CLOSED_LOOP only
 void foc_trajectory_step(void);
 
-// foc_trajectory_position_tick — call from SysTick at 1 kHz, SERVO_ON only
+// foc_trajectory_position_tick — call from SysTick at 1 kHz, every tick
 void foc_trajectory_position_tick(void);
 
 // foc_trajectory_start_move — request a move. target_pos is a DELTA in

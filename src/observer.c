@@ -14,13 +14,11 @@ static int32_t  counts_zero;    // encoder count at init
 static float    gain_pos, gain_vel, gain_dist;
 static bool     primed;
 
-/* TIM1_UP is a hardware timer, so the control tick is exactly 50us with no
- * jitter worth modelling. What is NOT guaranteed is that observer_update()
- * runs on every one of them: it sits in the sysid telemetry section, and each
- * run_* function returns early on !current_feedback_sample_valid() before
- * reaching it. A skipped call with a hardcoded dt makes the model
- * under-integrate, and on an integrator that accumulates. So take dt from the
- * free-running tick counter instead of assuming consecutive calls. */
+/* The control tick is exactly 50us, but observer_update() is not called on
+ * every tick: in trajectory mode foc_trajectory_step() returns before it when
+ * the drive is not servo-on or there is no fresh current sample. A skipped
+ * call with a hardcoded dt would under-integrate, so dt comes from the
+ * free-running tick counter. */
 extern volatile uint32_t g_control_tick;   /* main.c, 20kHz */
 
 static const float TICK_SECONDS = DT_CURRENT;    /* 50us per tick */
