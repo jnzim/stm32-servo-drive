@@ -35,7 +35,7 @@
 
 #pragma once
 
-// Rpi SPR2 slave
+// RPi SPI2 slave
 #define PIN_RPI_NSS      12  // PB12
 #define PIN_RPI_SCK      13  // PB13
 #define PIN_RPI_MISO     14  // PB14
@@ -65,5 +65,5 @@
 #define PIN_DRV_ENABLE   0   // PB0
 #define PIN_DRV_NFAULT   1   // PB1
 
-// RPi refill handshake
-#define PIN_STM_READY    3   // PC3
+// RPi start signal (input, pull-up; main.c waits for it at boot)
+#define PIN_PI_START     3   // PC3

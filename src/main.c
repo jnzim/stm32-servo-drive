@@ -10,6 +10,7 @@
 #include "config.h"
 #include "encoder.h"
 #include "drv8353.h"
+#include "board_f411.h"
 #include "pwm.h"
 #include "current_feedback.h"
 #include "foc_sysid.h"
@@ -107,12 +108,12 @@ int main(void)
 
     // Wait for the Pi's start signal on PC3 (input, pull-up): wait for high,
     // then for the Pi to pull it low. Nothing past here runs until then.
-    GPIOC->MODER &= ~(3u << (3u * 2u));
-    GPIOC->PUPDR &= ~(3u << (3u * 2u));
-    GPIOC->PUPDR |=  (1u << (3u * 2u));
+    GPIOC->MODER &= ~(3u << (PIN_PI_START * 2u));
+    GPIOC->PUPDR &= ~(3u << (PIN_PI_START * 2u));
+    GPIOC->PUPDR |=  (1u << (PIN_PI_START * 2u));
 
-    while (!(GPIOC->IDR & (1u << 3u))) {}
-    while (GPIOC->IDR & (1u << 3u)) {}
+    while (!(GPIOC->IDR & (1u << PIN_PI_START))) {}
+    while (GPIOC->IDR & (1u << PIN_PI_START)) {}
 
     drv8353_init();
     drv8353_configure();

@@ -21,7 +21,6 @@ extern volatile EncoderState encoder;
 // Public interface
 // =============================================================================
 void    encoder_init(void);
-void    encoder_zero(void);
 void    encoder_update(uint32_t timestamp_ms);
 
 int32_t encoder_get_position(void);

@@ -137,7 +137,5 @@ float velocity_feedback_rad(int32_t boxcar_counts);
 void  observer_update(int32_t counts, float iq_meas);
 
 float observer_get_velocity(void);      // [rad/s]
-float observer_get_position(void);      // [rad], relative to init
-float observer_get_disturbance(void);   // [rad/s^2]
 
 #endif /* OBSERVER_H */

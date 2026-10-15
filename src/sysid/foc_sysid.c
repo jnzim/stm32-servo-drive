@@ -461,7 +461,7 @@ static void run_cl_pos_chirp(void)
         int32_t raw = encoder_get_position() - sysid_enc_offset;
         pos_meas_rad = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
 
-        if (pos_chirp_settle_tick < POSITION_STEP_SETTLE_TICKS)
+        if (pos_chirp_settle_tick < CL_POS_CHIRP_SETTLE_TICKS)
         {
             pos_cmd_rad = 0.0f;
             ++pos_chirp_settle_tick;

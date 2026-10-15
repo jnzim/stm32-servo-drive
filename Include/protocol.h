@@ -10,29 +10,17 @@
  * =============================================================================
  */
 #define SPI2_TRANSACTION_BYTES  32u
-#define CRC16_POLY              0x1021  /* CCITT polynomial */
 
-/* Opcodes — Pi → STM commands and STM → Pi responses */
-#define SPI2_OP_NOP             0x00
-#define SPI2_OP_BLOCK_HDR       0x01
-#define SPI2_OP_DATA            0x02
-#define SPI2_OP_READY_ACK       0x03
-#define SPI2_OP_TELEM_REQ       0x04
-#define SPI2_OP_OPEN_LOOP       0x05
-#define SPI2_OP_STOP            0x06
+/* Opcodes (wire values shared with the Pi; never renumber) */
+#define SPI2_OP_DATA            0x02  /* TrajSlot (ring buffer) */
 #define SPI2_OP_MOVE_CMD        0x07  /* single-command move -- see MoveCmd below */
 
-/* Drive state machine values */
+/* Drive state machine values (wire values; 1 and 2 were OPEN_LOOP/ALIGN) */
 #define DRIVE_IDLE              0x00u
-#define DRIVE_OPEN_LOOP         0x01u
-#define DRIVE_ALIGN             0x02u
 #define DRIVE_SERVO_ON          0x03u
 #define DRIVE_FAULT             0x04u
 
-/* Trajectory frame fault flags */
-#define FAULT_TRAJ_CRC          0x01
-#define FAULT_TRAJ_DROP         0x02
-#define FAULT_TRAJ_OVF          0x04
+/* Fault flags */
 #define FAULT_FOLLOWING_ERROR   0x08  /* |pos_cmd - pos_fbk| > FOLLOWING_ERROR_LIMIT (config.h) */
 
 /* =============================================================================

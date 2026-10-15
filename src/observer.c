@@ -102,8 +102,6 @@ void observer_update(int32_t counts, float iq_meas)
 }
 
 float observer_get_velocity(void)    { return omega_hat; }
-float observer_get_position(void)    { return theta_hat; }
-float observer_get_disturbance(void) { return disturbance_hat;  }
 
 float velocity_feedback_rad(int32_t boxcar_counts)
 {

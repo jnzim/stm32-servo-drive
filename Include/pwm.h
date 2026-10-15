@@ -10,14 +10,6 @@ void pwm_enable(void);
 // pwm_disable — clear MOE, all outputs low
 void pwm_disable(void);
 
-// pwm_set_duty — set CCR for one phase, 0–2499
-// phase: 0=A, 1=B, 2=C
-void pwm_set_duty(uint8_t phase, uint16_t duty);
-
-// volts_to_duty — convert phase voltage to CCR value
-// v: [-V_BUS, +V_BUS] → returns 0–2499
-uint16_t volts_to_duty(float v);
-
 // pwm_apply_dq — full FOC output stage
 // Convention: (vd, vq, theta) — matches inverse Park argument order directly:
 //   v_alpha = vd*cos(θ) - vq*sin(θ)

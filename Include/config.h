@@ -31,32 +31,17 @@
 // Sysid test selector
 // =============================================================================
 
+// IDs are sent in every telemetry frame and the Pi dispatches on them, so the
+// numbers are fixed; gaps are tests that were removed.
 #define SYSID_TEST_CURRENT_LOOP_CHIRP       0
-#define SYSID_TEST_CURRENT_LOOP_STEP        1
-#define SYSID_TEST_VEL_CHIRP                2
 #define SYSID_TEST_CL_CURRENT_CHIRP         3
-#define SYSID_TEST_CL_VEL_STEP              4
-#define RIPPLE_DEBUG                        5
 #define SYSID_TEST_CL_VEL_CHIRP             6
-#define SYSID_TEST_POSITION_STEP            7
 #define SYSID_TEST_CL_POS_CHIRP             8
-#define SYSID_TEST_CINE_SWEEP               9
-#define SYSID_TEST_PHASE_CHECK              10
-#define SYSID_TEST_SHUNT_NOISE              11
 #define SYSID_TEST_FRICTION_SWEEP           12
-#define SYSID_TEST_BREAKAWAY                13
 #define SYSID_TEST_CL_VEL_PLANT_CHIRP       14
 
 #define SYSID_TEST SYSID_TEST_CL_VEL_PLANT_CHIRP
 
-// SHUNT_NOISE_PWM_ENABLE -- 1: bridge switches normally during the noise
-// window (real operating condition, includes any switching-induced ripple).
-// 0: pwm_disable() clears MOE so the bridge outputs go static, but TIM1
-// keeps counting and still fires the same ADC injected-conversion trigger
-// (TIM1 CH4 -> TRGO) at the same cadence -- isolates whether the measured
-// noise is switching-induced or an intrinsic shunt/amp/ADC floor, since the
-// sample timing is otherwise identical between the two runs.
-#define SHUNT_NOISE_PWM_ENABLE 1
 
 
 
@@ -174,7 +159,6 @@
 #define ADC_COUNTS       4096.0f
 #define ADC_ZERO         2048.0f
 #define AMPS_PER_COUNT   (VREF / (ADC_COUNTS * SHUNT_R * SHUNT_GAIN))
-#define ADC_SMP_84_CYCLES  4u
 #define ADC_SMP_15_CYCLES  1u
 
 // =============================================================================
@@ -326,9 +310,7 @@
 // =============================================================================
 
 #define V_ALIGN  1.0f
-#define V_RUN    1.0f
 #define ENC_DIR  (+1.0f)
-#define FF_GAIN  0.95f
 
 
 // =============================================================================
@@ -346,64 +328,6 @@
 #define SYSID_F_END      1000.0f   /* was 2000: at 5kHz telemetry that is 2.5 samples/cycle. 1000Hz gives 5/cycle, and the R/L fit only needs to reach well past the ~180-280Hz pole */
 #define SYSID_DURATION   20.0f
 #define SYSID_DT         DT_CURRENT
-
-// =============================================================================
-// Velocity loop ID Sysid chirp parameters
-// =============================================================================
-
-
-#define VEL_CHIRP_F_START    0.5f
-// Bumped 100Hz -> 300Hz: identification is only trustworthy up to roughly
-// 1/3 of the actuating current loop's bandwidth (above that, the current
-// loop's own dynamics start corrupting the "pure" plant measurement instead
-// of injecting a clean iq). That ceiling was ~165Hz when this was set at
-// the old 500Hz current-loop target; now that the current loop is
-// re-tuned to ~1000Hz (measured gc=1002.6Hz), it's ~330Hz. Also what
-// falsified the 65-90Hz "resonance" theory from the closed velocity loop
-// chirp: extended to 300Hz, this open-loop plant sweep showed a clean
-// single-pole rolloff with no bump at all through that band -- the real
-// cause turned out to be encoder_update()'s velocity filter group delay
-// (encoder.c, VEL_FILTER_N), not a mechanical mode. See the position loop
-// section below for the full story.
-#define VEL_CHIRP_F_END     300.0f
-#define VEL_CHIRP_DURATION  100.0f
-// Bumped 0.1f -> 0.3f: stage now attached (was bare motor when 0.1f/0.3f/0.5f/
-// 0.7f were last characterized) and 0.1A (0.064 Nm @ KT=0.64 Nm/A) produced
-// real motion up to ~10Hz then a hard freeze above that -- not a gradual
-// 1/f^2 inertial rolloff into the noise floor (which would shrink smoothly),
-// a sharp cutoff. Now explained directly: SYSID_TEST_FRICTION_SWEEP/
-// BREAKAWAY measured this stage's breakaway current at ~100mA -- 0.1A sits
-// right at/below that, so above some chirp frequency each half-cycle is too
-// short for current to ramp up to breakaway before reversing, and the stage
-// just sits there. 0.3A is 3x breakaway, comfortable headroom, still well
-// under VEL_CHIRP_IQ_LIMIT=1.0A's clamp.
-#define VEL_CHIRP_AMPLITUDE  0.3f
-
-
-// iq_cmd here is open-loop and unclamped by construction -- nothing bounds
-// it like VEL_IQ_LIMIT bounds the closed velocity loop's PI output. At
-// AMPLITUDE=0.3A this ran away once real motion (real back-EMF) appeared,
-// current railed at the ADC's representable limit for ~3.5s. Safety
-// ceiling, not a normal operating limit -- should never actually bind at
-// the intended amplitude.
-//
-// Tightened from 1.0A -- the clamp only bounds the *commanded* iq_cmd, not
-// how hard the current loop's PI can react to a real disturbance. A real
-// stick-slip breakaway snap (confirmed via ADC counter staying healthy
-// through the event -- not a stale-sensor artifact) still let measured
-// current ring out to ~10.5A despite iq_cmd never exceeding 1.0A. Tighter
-// clamp limits how much corrective authority the loop has to ring with.
-#define VEL_CHIRP_IQ_LIMIT  1.0f    // A -- 0.3A was reactive (well below the ~10.5A ring-out), not
-                                    // hardware-derived. Motor rated 2.9A continuous; still well under
-                                    // that with real margin for AMPLITUDE=0.2A to sit unclamped.
-
-// Settle-onto-zero before the chirp starts -- covers current decaying to
-// zero (tau ~= 0.79ms electrical). 20 ticks @ this test's raw 20kHz rate =
-// 1ms, comfortably past tau. Kept as
-// its own constant (not reused from CL_VEL_CHIRP_SETTLE_TICKS below) since
-// that one runs at the 5kHz-decimated velocity-loop rate -- same tick count
-// would mean a different real time on each.
-#define VEL_CHIRP_SETTLE_TICKS  20u
 
 // =============================================================================
 // Closed velocity loop chirp — sweeps vel_cmd (not iq) with the vel PI
@@ -551,36 +475,6 @@
 // first run actually used) -- 50mm exceeded that; 35mm sits under it with
 // real margin instead of just under the old 150mm/2 guess.
 #define FRICTION_SWEEP_POS_LIMIT_MM  35.0f
-
-// =============================================================================
-// Breakaway / static friction -- slow open current-loop ramp from rest,
-// watching for real motion (encoder velocity crossing a debounced
-// threshold), in both directions. Different risk profile than the kinetic
-// sweep above: this deliberately drives toward the exact failure mode that
-// already produced a real ~10.5A current ring-out on this stage (see
-// VEL_CHIRP_IQ_LIMIT section above) -- a stick-slip breakaway snap
-// releasing stored energy faster than an open loop can react. Mitigated by
-// (1) ramping slowly so the breakaway current is resolved finely instead of
-// jumped past, (2) requiring the detection threshold to be sustained for
-// multiple ticks, not a single noisy sample -- idle jitter measured up to
-// ~0.77 rad/s in the friction sweep's zero-holds, and (3) handing off to
-// the CLOSED velocity loop the instant breakaway is detected instead of
-// continuing the open-loop ramp -- the closed loop settles toward the
-// already-validated ~94mA kinetic friction current instead of continuing
-// to push whatever torque the ramp had built up.
-// =============================================================================
-#define BREAKAWAY_IQ_CEILING           0.5f   // A
-#define BREAKAWAY_RAMP_DURATION        5.0f   // s, 0 -> ceiling (0.1A/s)
-#define BREAKAWAY_DETECT_THRESH_RAD_S  1.0f   // rad/s -- above the ~0.77 rad/s
-                                               // idle jitter ceiling observed
-#define BREAKAWAY_DETECT_TICKS          25u   // @ 5kHz decimated = 5ms sustained
-#define BREAKAWAY_HANDOFF_VEL          1.0f   // rad/s, closed-loop target once free
-#define BREAKAWAY_HANDOFF_TICKS       1500u   // @ 5kHz decimated = 0.3s
-
-// Expected excursion here is <1mm (no motion at all until breakaway, then a
-// brief 1 rad/s hold) -- tight backstop sized for this test's much smaller
-// envelope, not reused from the friction sweep's 35mm.
-#define BREAKAWAY_POS_LIMIT_MM        10.0f   // mm
 
 // =============================================================================
 // Closed current loop chirp — sweeps iq_cmd (not Vq) with the current PI
@@ -746,22 +640,6 @@
     ((int32_t)(FOLLOWING_ERROR_LIMIT_MM * (float)ENCODER_CPR / STAGE_LEAD_MM_PER_REV))
 
 // =============================================================================
-// Position step test parameters
-// =============================================================================
-
-// NOTE: cl_step_tick in run_position_step() increments inside the
-// position-loop-decimated block (1 kHz, POS_LOOP_DECIMATE=20), NOT the raw
-// 20kHz ISR tick -- so these counts are in 1kHz ticks, not 20kHz ticks.
-#define POSITION_STEP_AMPLITUDE_RAD  0.1f      // ~5.7 deg -- small-signal: 0.1 rad x Kp_pos 380 = 38 rad/s commanded,
-                                                // under the 50 rad/s POSITION_VEL_LIMIT with 24% headroom, so the step
-                                                // shows the loop rather than the clamp. Re-check this product whenever
-                                                // Kp_pos moves: at 500 it would be 50 rad/s and the step would be
-                                                // measuring the limiter's slew rate instead (the same trap that made a
-                                                // 0.25 rad CL_POS_CHIRP read a 6% crossover rise from a 46% gain rise).
-#define POSITION_STEP_SETTLE_TICKS   1000u     // 1s @ 1kHz
-#define POSITION_STEP_HOLD_TICKS     2000u     // 2s @ 1kHz
-
-// =============================================================================
 // Closed position loop chirp — sweeps pos_cmd with the FULL cascade closed
 // (position P -> velocity PI -> current PI), to directly MEASURE the actual
 // closed-loop response of the whole system (pos_meas/pos_cmd), rather than
@@ -777,6 +655,7 @@
 #define CL_POS_CHIRP_F_START     0.1f     // Hz
 #define CL_POS_CHIRP_F_END     150.0f     // Hz
 #define CL_POS_CHIRP_DURATION   60.0f     // s
+#define CL_POS_CHIRP_SETTLE_TICKS  1000u  // 1s @ 1kHz, position held at 0 first
 // CL_POS_CHIRP_DEPLOYED -- which inner velocity loop the position chirp runs.
 //   0 = identification: PI only, friction feedforward bypassed. The Coulomb
 //       term is 0.094*tanh(vel_cmd/2.0), which flips sign at every velocity
@@ -795,51 +674,3 @@
 // crossover (41.2 -> 43.8Hz) and why the PM it reported is amplitude
 // dependent. iq also sat on the 2000mA VEL_IQ_LIMIT for 0.22% of samples.
 #define CL_POS_CHIRP_AMPLITUDE  0.10f   // rad -- 0.3 saturated VEL_IQ_LIMIT 20% of the run, 0.1 was too small to measure
-
-// =============================================================================
-// Cine sweep — same closed-loop position chirp, but sized for FILMING. Now
-// deliberately swept PAST both gains' real tracking limit -- the point isn't
-// just to look pretty, it's to visibly show the system run out of bandwidth
-// (or hit its velocity clamp) as frequency climbs: measured amplitude
-// shrinking below commanded, growing phase lag, eventually degenerating into
-// a blurred/reduced-amplitude wobble instead of clean tracking. The overlay
-// graph (cine_overlay_render.py) makes the breakdown legible even once the
-// physical motion itself is too fast to resolve by eye.
-//
-// AMPLITUDE was cut from 0.4 to 0.25 rad so the failure you see is genuinely
-// BANDWIDTH-driven for as much of the sweep as possible, not an artifact of
-// hitting POSITION_VEL_LIMIT early: a perfectly-tracking loop needs peak
-// velocity ~2*pi*f*AMPLITUDE, which only reaches the 20 rad/s clamp around
-// 12.7 Hz at this amplitude (vs. ~8 Hz at the old 0.4 rad) -- past that point
-// the clamp becomes part of the limitation too, which is a real, legitimate
-// system limit, not a bug in the test.
-//
-// Run it once per gain you want to compare on camera (rebuild/reflash between
-// runs): POSITION_LOOP_KP=51.81 for the "before" take, 157.7 for "after".
-// Expect the old gain to visibly give up well before the new one.
-//
-// F_START raised from 0.1 to 3Hz -- the slow end was dead time, nothing
-// visibly interesting happens until well into the sweep. F_END raised from
-// 40 to 80Hz -- 40 wasn't high enough to kill the visible motion entirely,
-// it was still clearly vibrating at the end. DURATION cut from 40 to 20s to
-// keep the sweep rate (time per decade) roughly the same over the smaller,
-// higher-frequency range instead of dragging the interesting part out.
-// =============================================================================
-
-#define CINE_SWEEP_F_START      3.0f    // Hz
-#define CINE_SWEEP_F_END       80.0f    // Hz
-#define CINE_SWEEP_DURATION    20.0f    // s
-#define CINE_SWEEP_AMPLITUDE    0.25f   // rad
-
-// =============================================================================
-// Phase check — per-phase DC excitation, isolates a bad phase connection
-// (connector/ferrule, not energizing) from a bad current-sense channel
-// (energized fine, that ADC channel just doesn't show it). Reuses
-// run_voltage_test's (0.5, -0.25, -0.25) magnitude, already proven safe held
-// for 30s on this hardware.
-// =============================================================================
-
-#define PHASE_CHECK_V_MAIN      1.5f     // V -- driven phase
-#define PHASE_CHECK_V_RETURN   -0.75f    // V -- other two phases, balanced return
-#define PHASE_CHECK_HOLD_TICKS  40000u   // 2s @ 20kHz -- long enough to read a settled DC value
-#define PHASE_CHECK_ZERO_TICKS   2000u   // 100ms @ 20kHz -- decay margin between phases (same as ALIGN's discharge)

@@ -166,19 +166,6 @@ int32_t encoder_get_velocity(void)
 }
 
 
-// =============================================================================
-// encoder_zero
-// Reset encoder position and velocity state.
-// =============================================================================
-void encoder_zero(void)
-{
-    ENC_TIM->CNT = 0;
-    last_position = 0;
-
-    encoder.position = 0;
-    encoder.velocity = 0;
-}
-
 // ---------------------------------------------------------------------------
 // encoder_update — call from TIM1 ISR at 20 kHz
 // ---------------------------------------------------------------------------

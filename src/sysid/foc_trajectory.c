@@ -73,12 +73,13 @@ static int32_t  g_move_vel_max   = 0;
 static int32_t  g_move_accel_max = 0;
 
 // =============================================================================
-// Applied voltage — written each ISR, exposed for telemetry in SysTick
+// Applied voltage and measured iq — written each 20 kHz tick, read by the
+// position tick's telemetry (SysTick)
 // =============================================================================
 
-float foc_vq_applied = 0.0f;
-float foc_vd_applied = 0.0f;
-float foc_iq_meas     = 0.0f;  // real i_q feedback, exposed for telemetry in SysTick
+static float foc_vq_applied = 0.0f;
+static float foc_vd_applied = 0.0f;
+static float foc_iq_meas    = 0.0f;
 
 
 // =============================================================================
@@ -286,20 +287,4 @@ void foc_trajectory_start_move(int32_t target_pos, int32_t vel_max, int32_t acce
 bool foc_trajectory_move_active(void)
 {
     return g_move_pending || move_gen_active(&g_move);
-}
-
-// =============================================================================
-// foc_trajectory_reset — call on fault recovery or re-enable
-// =============================================================================
-
-void foc_trajectory_reset(void)
-{
-    traj_stage      = TRAJ_STAGE_ALIGN;
-    traj_align_tick = 0;
-    traj_enc_offset = 0;
-
-    foc_vd_applied = 0.0f;
-    foc_vq_applied = 0.0f;
-
-    loops_reset();
 }

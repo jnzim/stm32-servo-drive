@@ -20,9 +20,6 @@ void foc_trajectory_step(void);
 // foc_trajectory_position_tick — call from SysTick at 1 kHz, SERVO_ON only
 void foc_trajectory_position_tick(void);
 
-// foc_trajectory_reset — call on fault recovery or re-enable
-void foc_trajectory_reset(void);
-
 // foc_trajectory_start_move — request a move. target_pos is a DELTA in
 // counts from wherever the stage actually is when the move starts, not an
 // absolute position -- resolved against the live encoder position inside

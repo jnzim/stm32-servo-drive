@@ -225,7 +225,7 @@ void pwm_disable(void)
 // pwm_set_duty — write one phase CCR
 // =============================================================================
 
-void pwm_set_duty(uint8_t phase, uint16_t duty)
+static void pwm_set_duty(uint8_t phase, uint16_t duty)
 {
     if (duty > PWM_ARR)
         duty = PWM_ARR;
@@ -246,7 +246,7 @@ void pwm_set_duty(uint8_t phase, uint16_t duty)
 // v range: [-V_BUS/2, +V_BUS/2]
 // =============================================================================
 
-uint16_t volts_to_duty(float v)
+static uint16_t volts_to_duty(float v)
 {
     float normalized = v / (V_BUS / 2.0f);
 
