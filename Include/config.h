@@ -4,16 +4,12 @@
 // Run mode
 // =============================================================================
 
+// Compile-time switch: RUN_MODE_SYSID runs one identification test
+// (foc_sysid.c, SysIdSample telemetry); RUN_MODE_CLOSED_LOOP runs commanded
+// moves from the Pi (foc_trajectory.c, TelemetryFrame telemetry). Changing it
+// means a rebuild and reflash.
 #define RUN_MODE_SYSID        0
 #define RUN_MODE_CLOSED_LOOP  1
-// Closed loop is the normal mode now: MoveCmd over SPI, trapezoidal profile
-// generated on the STM (trap_gen.c), TelemetryFrame back to the Pi.
-//
-// This is a COMPILE-TIME switch, not a runtime one -- main.c and spi.c pick
-// either foc_sysid_step + SysIdSample or foc_trajectory_step + TelemetryFrame,
-// never both. So running any SYSID_TEST again means setting this back to
-// RUN_MODE_SYSID and reflashing. Every identification run behind the numbers
-// in this file was taken that way.
 #define RUN_MODE              RUN_MODE_CLOSED_LOOP
 
 // Move profile for RUN_MODE_CLOSED_LOOP. Both generators take the same
@@ -42,31 +38,11 @@
 
 #define SYSID_TEST SYSID_TEST_CL_VEL_PLANT_CHIRP
 
-
-
-
-
 // =============================================================================
 // SPI telemetry
 // =============================================================================
-//
-// CL_VEL_CHIRP instability events used to end with the whole system frozen.
-// Root cause: EXTI15_10_IRQHandler (CS rising edge, NVIC priority 0 --
-// highest in the system) was passively waiting for DMA1_Stream4's TX
-// enable bit to self-clear, which only happens if the host's SPI
-// transaction completed all 32 bytes on its own. A short/glitched host
-// transaction leaves the stream permanently mid-transfer with no more
-// clock edges ever coming, so it never self-clears -- confirmed live via
-// debugger (stall_guard counting all the way down). At priority 0, burning
-// the full ~6-8ms bound there blocks the main control loop, ADC, and
-// everything else for the duration -- that's what was actually causing the
-// "instability" all session; disabling SPI entirely (3 clean passes, no
-// freeze) proved it wasn't the velocity loop. Fixed properly in
-// EXTI15_10_IRQHandler (spi.c) -- it now force-disables the stream instead
-// of waiting on natural completion, so re-enabling telemetry here.
-#define SPI_TELEM_ENABLED  1
 
-
+#define SPI_TELEM_ENABLED  1    // 1 = SPI2 link to the Pi is set up at boot
 
 // =============================================================================
 // Math
@@ -95,58 +71,11 @@
 // Bus voltage
 // =============================================================================
 
-// 12V is the only bus voltage actually validated tonight. 24V was
-// discussed and drafted in this file at one point but the PSU was never
-// actually changed to it -- a "76.7% torn SPI frames" result earlier that
-// got misattributed to 24V was really at 12V, running
-// SYSID_TEST_POSITION_STEP (a big, fast, saturating move). So the real,
-// confirmed picture:
-//
-//  - 12V, big/fast step move, SPI at 4MHz: 76.7% torn frames. Slowing the
-//    Pi's SPI clock to 1MHz (spi_open_configure() speed_hz in foc-sysid's
-//    main.cpp -- a Pi-side runtime arg, no firmware change) dropped that to
-//    12% -- real improvement, not a full fix. Scope on MISO (STM32 output)
-//    vs. SCK (from the Pi) showed MISO riding on visible noise, including a
-//    slow DC-level shift mid-burst while SCK kept clocking normally --
-//    direct evidence of noise coupling onto the line itself (likely PWM/
-//    motor switching related), not a firmware or protocol bug. Wiring is
-//    already the shortest jumpers available, so length/routing isn't a
-//    lever here.
-//  - 16V (the one real voltage change tried): the Pi's capture tool gets no
-//    usable SPI data at all -- gives up before ALIGN even finishes -- while
-//    the STM32 control loop keeps running correctly regardless (motion
-//    confirmed physically). Worse than 12V's partial corruption, which
-//    argues against a simple "more voltage = more noise" relationship.
-//  - 24V: not actually tried. Don't trust any comment/number attributed to
-//    24V from earlier tonight.
-//
-// Net: SPI corruption is real even at the "known good" 12V under heavy
-// switching, and gets worse (not better, not proportionally) at 16V. This
-// is a bench hardware question (scope the SPI2 signal path and whatever
-// feeds its logic levels) -- not something more config changes or clock
-// tweaks alone are going to fully resolve. Staying at 12V, since it's the
-// only setting where the SPI link is usable at all, even if imperfectly.
-//
-// Doesn't touch the current loop's design regardless of value: P(s)=1/(Ls+R)
-// and CURRENT_LOOP_KP/KI depend only on motor R/L, not V_BUS -- this only
-// moves the +-(V_BUS/2) saturation clamp (loops.c pi_init calls) and the PWM
-// normalization range (pwm.c), both already written generically off this
-// constant.
-// 2026-09-22: 12V -> 24V. Not for more torque -- to stop the current loop's
-// PI output clamping at +-V_BUS/2 during the high end of a chirp. Measured at
-// 12V: vq reached 6000mV peak (exactly the clamp) by ~1.25kHz, so the loop was
-// voltage-starved and the closed-loop magnitude could not be read up there.
-// 0.8A through |Z| = sqrt(R^2 + (wL)^2) with R=1.45 L=1.29mH needs ~9.8V peak
-// at 1.5kHz; +-12V covers it, +-8V (16V bus) would still clip the last third.
-//
-// The "16V gives no usable SPI at all" note below is not evidence any more --
-// it was taken with the STM<->DRV logic ground missing (fixed 2026-09-22, see
-// the chirp-amplitude commit). Re-check torn frames on the first run at 24V
-// rather than assuming either way.
-//
-// THE PSU MUST ACTUALLY BE AT 24V. This constant sets the PI clamp (loops.c
-// pi_init) and the PWM normalization range (pwm.c); if the supply is still at
-// 12V the firmware will command twice the voltage it delivers.
+// Sets the current PI clamp (+-V_BUS/2 = +-12V, loops.c) and the PWM
+// normalization (pwm.c). The supply must actually be at this voltage, or the
+// firmware commands more than the bridge delivers. 24V rather than 12V because
+// at 12V the current loop's vq hit its 6V clamp near 1.25kHz during a 0.8A
+// chirp; the loop gains do not depend on V_BUS.
 #define V_BUS   24.0f
 
 // =============================================================================
@@ -167,123 +96,33 @@
 
 #define DT_CURRENT   (1.0f / 20000.0f)
 
-// The velocity loop runs every VEL_LOOP_DECIMATE-th control tick, and
-// DT_VELOCITY is derived from that rather than written independently -- they
-// used to be separate constants that could silently disagree, which would
-// scale the PI's integral term by whatever the mismatch was.
-//
-// Stays at 4 (5kHz). Tried 1 (20kHz) on 2026-10-06 and it bought nothing:
-//
-//   5kHz    gc 114.7Hz  PM 68.2 deg  -3dB 170.0Hz
-//   20kHz   gc 107.7Hz  PM 70.9 deg  -3dB 168.5Hz
-//
-// The reasoning for trying it was wrong. The decimation's ZOH acts on the iq
-// command going into an 855Hz current loop, which is ~0.5 sample = 100us = 4
-// deg at a 115Hz crossover -- not the 1.5 samples / 12.4 deg assumed. Four
-// degrees is inside run-to-run scatter (0.155 dB rms, measured). So it costs
-// 4x the velocity-loop CPU for no measurable phase, and TIM1_UP was already
-// at 37us of a 50us budget before the observer was added.
+// Velocity loop runs every VEL_LOOP_DECIMATE-th tick (5 kHz); DT_VELOCITY is
+// derived from it so the two cannot disagree. Running it at 20 kHz was tried
+// (2026-10-06) and changed nothing measurable (gc 114.7 vs 107.7Hz, PM 68.2
+// vs 70.9deg) at 4x the CPU.
 #define VEL_LOOP_DECIMATE  4u
 #define DT_VELOCITY  (DT_CURRENT * (float)VEL_LOOP_DECIMATE)
 
 #define DT_POSITION  (1.0f /  1000.0f)
 
-// Telemetry-only scale factor for vel_meas_counts before it's narrowed to
-// int16_t for the SPI frame. encoder_get_velocity()/vel_meas_counts are
-// full-width (int32_t/float) everywhere the control loop actually uses
-// them -- this only matters for the telemetry cast, which was overflowing
-// unscaled above 32767 counts/s (=25.15 rad/s) in several SYSID_TEST
-// blocks, producing a garbled *logged* velocity while the real velocity
-// loop feedback stayed correct the whole time. /8 gives headroom to
-// ~201 rad/s before this cast wraps again.
-#define VEL_TELEM_DIV  8.0f
-
-// vel_cmd scaling for the POSITION tests' enc_hi slot. Logged as mrad/s it
-// railed: int16 tops out at 32.767 rad/s, while POSITION_VEL_LIMIT is 50 and
-// the position P output is Kp_pos * error -- at Kp_pos=380 an error of only
-// 0.13 rad already asks for 50 rad/s. The field silently clipped at +-32.77
-// and gave no hint that the loop was saturating. /4 gives +-131 rad/s of range
-// at 4 mrad/s resolution, so the clamp is visible before it is hit.
-// Velocity-loop tests keep the plain mrad/s scaling in sysid_f -- their
-// amplitude is 15 rad/s and never goes near the rail.
-#define VEL_CMD_TELEM_DIV  4.0f
+// Telemetry-only scaling so velocities fit the int16 frame slots. The control
+// loops use full-width values.
+#define VEL_TELEM_DIV      8.0f   // vel_meas counts/s / 8: range +-201 rad/s
+#define VEL_CMD_TELEM_DIV  4.0f   // vel_cmd mrad/s / 4: range +-131 rad/s (position chirp)
 
 // =============================================================================
-// Current loop — zero-cancellation design, actually ~255Hz, not the 500Hz
-// this section used to claim.
-//
-// Fresh SYSID_TEST_CURRENT_LOOP_CHIRP run (rotor locked, 1.0A amplitude,
-// bode_plot.py curve fit, coherence ~1.0 out to ~150-200Hz) gives the
-// plant as R=1.45 ohm / L=1.29mH / fc=179Hz -- superseding the previously-
-// cited "R=1.67/L=1.41mH" figure, which was a stale citation never
-// re-verified in this session. Against THIS fit, Kp=2.07/Ki=2450 (below)
-// has a zero/pole ratio of 1.053 -- essentially perfect cancellation --
-// and predicts BW=255Hz by construction. That was independently
-// corroborated by SYSID_TEST_CL_CURRENT_CHIRP (closed-loop iq_cmd->iq_meas
-// chirp, rotor locked): raw -3dB crossing 197-300Hz across two runs,
-// single-pole curve fit of the full coherent band 361Hz, backed-out real
-// margin gc=252-313Hz/PM=83-114 deg -- all consistent with a real loop
-// performing at or a bit above a ~255Hz idealized prediction, not with
-// 500Hz.
-//
-// A genuine 500Hz zero-cancellation design against this plant would need
-// Kp=4.05/Ki=4555 -- close to the "1000Hz bump (Kp=4.43/Ki=5184)" already
-// tried and reverted earlier tonight for continuous idle buzz (vq
-// +-2-3V, iq_meas +-400-800mA at rest, SYSID_TEST_POSITION_STEP). Not
-// re-trying that blind. Kp=2.07/Ki=2450 is the proven-quiet value and is
-// being kept -- the fix here is the label, not the gain. Re-run
-// bode_plot.py + SYSID_TEST_CL_CURRENT_CHIRP again if R/L is ever
-// re-measured, rather than trusting this citation indefinitely either.
-// Same gains used for both current_loop (q-axis) and d_current_loop --
-// Ld ~= Lq for this machine.
+// Current loop
 // =============================================================================
 
-// Current loop, designed 2026-09-22 against a measured plant.
+// Zero-cancellation PI, same gains on d and q (Ld ~= Lq). Plant from the
+// closed-loop current chirp (0.8A): R = 1.73 ohm, L = 1.05 mH, pole 262Hz.
+//     Kp = 2*pi*500*L = 3.30 V/A
+//     Ki = 2*pi*500*R = 5435 V/(A*s)      Ki/Kp = R/L, so L(s) -> wc/s
+// Measured closed loop: crossover 504Hz, PM 72.7deg, -3dB 767Hz.
 //
-// CROSSOVER, not bandwidth. Kp = 2*pi*fc*L places gc (where |L(jw)| = 1).
-// The closed-loop -3dB point lands ~1.5-1.9x above gc for this damping --
-// measured 855Hz for a 500Hz design, ratio 1.71. The two are different
-// numbers and confusing them is what made a correctly-behaving loop look
-// broken for most of a session. Any "BW" claim in this file means -3dB;
-// any design formula below sets gc.
-//
-// Plant, from a closed-loop 0.8A chirp (constant current across the sweep,
-// so it is well conditioned at every frequency). Solving
-// |Z|^2 = R^2 + (2*pi*f*L)^2 per frequency bin gives L flat to +-0.8% from
-// 91Hz to 977Hz -- a clean first-order RL, no eddy-current or iron-loss
-// frequency dependence:
-//     R = 1.73 ohm, L = 1.05 mH, R/L = 1648 rad/s = 262Hz
-//
-// TRIAL 2026-10-06: gc = 1000Hz. Revert pair is 3.30 / 5435 (gc 500Hz),
-// which is the measured, verified configuration -- this one is not, because
-// 5kHz telemetry cannot verify it. A -3dB near 1.5kHz needs a sweep past it,
-// which is 3.3 samples/cycle, the regime where a 1267Hz fit, a +1.14dB peak
-// and a +95deg phase LEAD all turned out to be artifacts. What IS observable
-// without bandwidth: audible buzz at rest, iq noise at rest, and magnitude
-// roll-off up to ~1kHz. Treat any phase or gc number from this as suspect
-// until the TX ring lands and telemetry goes to 10kHz.
-//
-// Designed against L=1.04mH (back solved from the measured 504Hz crossover,
-// and agreeing with the datasheet 1.02 and the closed-loop fit 1.05) and
-// R=1.55 ohm (datasheet per-phase 1.555, open-loop fit 1.544).
-//
-// Original 500Hz design:
-//     Kp = 2*pi*gc*L = 2*pi*500*0.00105 = 3.30 V/A
-//     Ki = 2*pi*gc*R = 2*pi*500*1.73    = 5435 V/(A*s)
-//     Ki/Kp = 1648 = R/L, so the zero cancels the pole and L(s) -> wc/s.
-// Verified live: |C| = vq/err settles at 3.56 against Kp 3.30 (the excess is
-// residual integrator), and |L| computes to 1.05 at 500Hz -- crossover is
-// within 5% of design.
-//
-// Do NOT fit the plant from the OPEN-loop chirp. It drives a constant 1.0V,
-// so current collapses to ~130mA by 1kHz where dead-time error is a large
-// fraction of the command; that inflates L (it read 1.22mH vs 1.05mH here)
-// and puts the zero below the real pole, leaving an uncancelled
-// second-order-with-a-zero response that rolls off too shallow to read.
-//
-// Previous pair, run for months: Kp=2.07 / Ki=2450, which is gc ~250Hz and
-// therefore ~420Hz -3dB. Still a fine configuration; this one is simply
-// faster and now has a measured plant behind it.
+// Fit the plant from the closed-loop chirp, not the open-loop one: the
+// open-loop chirp's current falls off at high frequency, where dead-time
+// error reads L high (1.20 vs 1.05 mH).
 #define CURRENT_LOOP_KP  3.30f      // V/A
 #define CURRENT_LOOP_KI  5435.0f    // V/(A*s)
 
@@ -306,371 +145,138 @@
 #define VEL_IQ_LIMIT  3.5f       // A
 
 // =============================================================================
-// FOC bring-up voltages
+// Alignment (d-axis hold that pulls the rotor to electrical angle 0)
 // =============================================================================
 
-#define V_ALIGN  1.0f
-#define ENC_DIR  (+1.0f)
-
-
-// =============================================================================
-// Alignment timing — ALIGN_TICKS at 20 kHz = 100 ms
-// =============================================================================
-
-#define ALIGN_TICKS  100000u
+#define V_ALIGN      1.0f        // V on the d axis
+#define ENC_DIR      (+1.0f)
+#define ALIGN_TICKS  100000u     // trajectory mode: 5 s at 20 kHz
 
 // =============================================================================
-// Current loop ID Sysid chirp parameters
+// Open-loop current chirp (test 0)
 // =============================================================================
 
-#define SYSID_AMPLITUDE  2.0f
+#define SYSID_AMPLITUDE  2.0f      // V on q, theta = 0
 #define SYSID_F_START    1.0f
-#define SYSID_F_END      1000.0f   /* was 2000: at 5kHz telemetry that is 2.5 samples/cycle. 1000Hz gives 5/cycle, and the R/L fit only needs to reach well past the ~180-280Hz pole */
+#define SYSID_F_END      1000.0f   // 5 samples/cycle at 5 kHz telemetry
 #define SYSID_DURATION   20.0f
 #define SYSID_DT         DT_CURRENT
 
 // =============================================================================
-// Closed velocity loop chirp — sweeps vel_cmd (not iq) with the vel PI
-// closed, to identify the CLOSED-loop vel_cmd -> vel_meas response for
-// designing the outer position P controller.
-
+// Closed velocity loop chirp (tests 6 and 14)
 // =============================================================================
 
 #define CL_VEL_CHIRP_F_START     0.5f
 #define CL_VEL_CHIRP_F_END     200.0f
 #define CL_VEL_CHIRP_DURATION   60.0f
 #define CL_VEL_CHIRP_AMPLITUDE  15.0f     // rad/s
-                                          // friction feedforward now active (FRICTION_FF_*
-                                          // below); this run is the amplitude=15 half
 
-// P-only velocity loop for this identification run only (Ki=0) -- makes the
-// controller a known memoryless gain C(s)=Kp, so the plant can be backed out
-// of the measured closed-loop response with a single division:
+// Test 14 (plant identification) closes the loop with a P-only gain, so
+// C(s) = Kp exactly and the plant backs out of the measured response:
 //   H = CP/(1+CP)  =>  L = H/(1-H)  =>  P = L / Kp
 // Peak iq_cmd = Kp*AMPLITUDE = 0.0239*15 = 0.36A, well under VEL_IQ_LIMIT.
+// Test 6 (verification) runs the deployed VEL_KP/VEL_KI; read H only.
 #define CL_VEL_CHIRP_PONLY_KP    0.0239f
 
-// Two tests share the closed velocity loop chirp; they differ only in the
-// controller in the loop, and the test ID (sent in every telemetry frame)
-// records which one ran:
-//   SYSID_TEST_CL_VEL_PLANT_CHIRP -- identification: a private P-only loop
-//       (CL_VEL_CHIRP_PONLY_KP, Ki=0, no friction feedforward), so C(s)
-//       really is that constant and the plant back-out P(s) = L(s)/Kp is
-//       valid. Use this to measure the plant.
-//   SYSID_TEST_CL_VEL_CHIRP -- verification: the deployed VEL_KP/VEL_KI PI,
-//       with friction feedforward added only if CL_VEL_CHIRP_FF=1. Use this
-//       to check the shipped loop. The back-out is meaningless here (C(s) is
-//       a PI, plus a reference feedforward path when FF=1) -- read H(s) only.
-
-// CL_VEL_CHIRP_FF -- friction feedforward on top of the deployed PI in
-// SYSID_TEST_CL_VEL_CHIRP. The P-only plant-ID test never has it. FF=0 is the
-// configuration the position loop actually sits on, and measured that way on
-// 2026-09-19 the
-// inner loop peaks +10.8dB at 32Hz -- invisible in the P-only identification
-// runs, which are flat there.
+// Test 6 only: 1 adds friction feedforward on top of the deployed PI. 0 is
+// the loop the position chirp's identification mode sits on.
 #define CL_VEL_CHIRP_FF          0
 
-// Friction feedforward -- Fc/Fv from the repeated SYSID_TEST_FRICTION_SWEEP
-// runs (stage attached, averaged across 3 clean runs: Fc~94mA, Fv~1.9mA per
-// rad/s; breakaway came out ~same order as kinetic within measurement
-// noise, so no separate static term). Added to CL_VEL_CHIRP's P-only iq_cmd
-// here specifically to re-test whether the amplitude-dependence seen
-// between CL_VEL_CHIRP_AMPLITUDE=8 vs 15 rad/s (K/tau backed out ~2x
-// different) was actually the P-only loop fighting friction rather than a
-// real plant nonlinearity -- if it was, feeding friction forward instead of
-// making the loop react to it should make the two amplitudes agree.
-// FF_SMOOTH_RAD_S replaces a hard sign(v) with tanh(v/FF_SMOOTH_RAD_S) so
-// the feedforward doesn't flip-flop full Coulomb torque back and forth
-// chattering right at v=0 -- matters for any real position move (always
-// ends by crossing v=0 to settle), not for this chirp test itself.
+// =============================================================================
+// Friction feedforward (velocity_loop_step, loops.c)
+// =============================================================================
+
+// iq_ff = Fc * tanh(vel_cmd / smooth) + Fv * vel_cmd. From the friction sweep
+// (test 12), stage attached, averaged over 3 runs. Re-measured 2026-10-06:
+// Fc 90.6mA, Fv 2.13 mA per rad/s, inside the sweep's +-5mA repeatability, so
+// the constants were left alone. tanh instead of sign() so the Coulomb term
+// does not chatter at zero velocity.
 #define FRICTION_FF_COULOMB_MA           94.0f   // mA
 #define FRICTION_FF_VISCOUS_MA_PER_RADS   1.9f   // mA per rad/s
 #define FRICTION_FF_SMOOTH_RAD_S          2.0f   // rad/s
 
 // =============================================================================
-// Friction sweep — closed velocity loop (production PI, real integrator),
-// series of constant-velocity holds from V_MIN to V_MAX rad/s, one full
-// ascending sweep per direction. A real integrator drives steady-state
-// velocity error to zero, so steady-state i_q at each hold is a direct
-// measurement of the torque needed to overcome friction (+ viscous drag) at
-// that speed -- the actual friction curve, not inferred indirectly from how
-// closed-loop Bode gain shifts with chirp amplitude (which is what
-// motivated this test: CL_VEL_CHIRP amplitude 8 vs 15 rad/s gave a nearly
-// 2x different backed-out plant gain/tau on this stage-loaded system, and
-// the archived bare-motor CL_VEL_CHIRP amplitude sweep -- 5 rad/s: DC=-6.2dB
-// BW=1.7Hz vs 20/25 rad/s: DC=-1.3dB BW~61-62Hz -- showed the same cliff,
-// pre-dating the stage entirely).
-//
-// V_MAX capped at 23, not 25 -- the first run of this test showed vel_meas
-// (encoder_get_velocity()) intermittently flipping sign at 24-25 rad/s
-// (real position trace stayed smooth/monotonic through those points --
-// confirmed via enc_hi_raw/enc_lo_raw, so the stage itself was fine, this
-// is a measurement glitch, likely an overflow in the velocity calc at high
-// speed) while feeding that same corrupted value back into the velocity
-// PI's own feedback, producing erratic iq at exactly those two steps. Not
-// yet root-caused -- until it is, 24-25 rad/s data from this test isn't
-// trustworthy, so stop the sweep at 23 instead of spending time/travel on
-// two points that have to be thrown out anyway.
-//
-// One direction at a time, with a zero-velocity settle between them,
-// rather than alternating sign every step -- keeps any breakaway/hysteresis
-// asymmetry between directions as a difference between the two sweep
-// halves instead of scrambling it step to step.
+// Friction sweep (test 12)
 // =============================================================================
-// Re-measured 2026-10-06 after the grounding fix, and the constants above are
-// LEFT ALONE deliberately. Full 1-23 rad/s sweep fits Fc=90.6mA /
-// Fv=2.133 mA per rad/s against the deployed 94.0 / 1.900 -- 4% and 12%, which
-// is inside what this measurement can distinguish.
-//
-// These were never noise-limited. The spread at each velocity point is 55-87mA
-// against an 8.1mA shunt noise floor, because it is cogging and torque ripple,
-// not measurement error.
-//
-// Two things worth knowing before re-running it:
-//
-//  - TRUE repeatability is +-5mA, not the +-1.5mA the within-hold standard
-//    error suggests. The SEM treats correlated variation inside one hold as
-//    independent samples; cogging is position-locked and does not average down
-//    that way. The honest figure comes from comparing the forward and reverse
-//    halves at matched speeds: mean difference 2.1mA, std 5.2mA.
-//
-//  - Do NOT fit Fv over a narrow velocity range. Over 3-7 rad/s it comes out
-//    3.40 mA per rad/s; over 1-23 it is 2.13. A four-unit lever arm cannot
-//    determine a slope against +-5mA of scatter.
-//
-// Also established: friction does not depend on position. The reverse half runs
-// the same speeds at the opposite end of the travel (v=3 at 0.57mm going out,
-// 16.04mm coming back) and agrees within the 2.1 +- 5.2mA above. An apparent
-// step at 4-5 rad/s in a coarse sweep, and a zigzag at 0.25 rad/s resolution,
-// both turned out to be scatter -- neither reproduced between the halves.
+
+// Deployed velocity PI (real integrator, so steady-state iq is the friction
+// torque) holding constant velocities V_MIN..V_MAX, one direction at a time
+// with a zero-velocity settle between. Repeatability is +-5mA (forward vs
+// reverse halves at matched speeds); fit Fv over the full range, not a narrow
+// one.
 #define FRICTION_SWEEP_V_MIN         1.0f    // rad/s
 #define FRICTION_SWEEP_V_MAX        23.0f    // rad/s
 #define FRICTION_SWEEP_V_STEP        1.0f    // rad/s
 
-// Stage has 150mm total travel, 2mm lead/rev, ENCODER_CPR=8192 counts/rev.
-// A constant-velocity hold displaces the stage by v*lead/(2*pi) per second
-// regardless of how "settled" the loop already is, so hold time directly
-// sets one-way sweep distance -- originally 5000 ticks (1.0s/step) summed
-// to ~103mm one-way, nearly the entire travel. Cut to 1000 ticks (0.2s) for
-// the first run, which measured ~20.7mm one-way (enc_hi_raw/enc_lo_raw,
-// confirmed real motion, no hard-stop). Told directly that real available
-// travel is 2x what that run used (~41mm), not just an estimate -- sized
-// against that number now instead of the original 150mm/2 guess: 1500
-// ticks (0.3s/step) sums to ~26.3mm one-way (sum(1..23)*0.318mm/s*0.3s),
-// safely under that 41mm with real margin, and buys a longer steady-state
-// averaging window per step than the first run had (that run's fit
-// residual std was already only ~5.3mA, consistent with pure measurement
-// noise -- this should tighten it further, not chase a real nonlinearity).
-#define FRICTION_SWEEP_HOLD_TICKS   1500u    // @ 5kHz decimated = 0.3s/step
-#define FRICTION_SWEEP_SETTLE_TICKS 1000u    // @ 5kHz decimated = 0.2s
+// 0.3 s per step is about 26mm of travel one way, inside the ~41mm available.
+#define FRICTION_SWEEP_HOLD_TICKS   1500u    // @ 5kHz = 0.3s/step
+#define FRICTION_SWEEP_SETTLE_TICKS 1000u    // @ 5kHz = 0.2s
 
 #define STAGE_LEAD_MM_PER_REV         2.0f
 
-// Hard backstop, independent of the hold-time arithmetic above -- aborts
-// the current sweep direction early if actual measured displacement from
-// the test's start position exceeds this, rather than trusting the
-// commanded-velocity x hold-time estimate alone not to be wrong (stale
-// constant, wrong direction sign, anything). Tightened from 50mm to 35mm
-// now that the real safe budget is known to be ~41mm (2x the ~20.7mm the
-// first run actually used) -- 50mm exceeded that; 35mm sits under it with
-// real margin instead of just under the old 150mm/2 guess.
+// Backstop: ends a sweep direction if measured travel from its start exceeds
+// this, whatever the hold-time arithmetic says.
 #define FRICTION_SWEEP_POS_LIMIT_MM  35.0f
 
 // =============================================================================
-// Closed current loop chirp — sweeps iq_cmd (not Vq) with the current PI
-// closed, to directly measure H(s) = iq_meas/iq_cmd and back out the real
-// closed-loop margin (L = H/(1-H)) instead of assuming C(s)=Kp+Ki/s and
-// combining it with the separately-measured open-loop electrical plant
-// (bode_plot.py's method -- shown on the velocity loop to be off by 37% on
-// crossover, most likely from saturation invalidating that assumption).
+// Closed current loop chirp (test 3)
 // =============================================================================
 
+// Chirps iq_cmd through the closed current PI; L = H/(1-H) gives the margin.
 #define CL_CURRENT_CHIRP_F_START        1.0f
-#define CL_CURRENT_CHIRP_F_END       1000.0f   /* 5kHz telemetry -> 10 samples/cycle at 500Hz, 5 at 1kHz.
-                                                 * Sweeping to 1.5-2kHz gives 2.5-3.4 samples/cycle, where
-                                                 * every derived figure this session (a 1267Hz single-pole
-                                                 * fit, a +1.14dB peak, a +95deg phase LEAD) turned out to be
-                                                 * sampling artifact. Raise this only with the telemetry rate. */
+#define CL_CURRENT_CHIRP_F_END       1000.0f   // 5 samples/cycle at 5 kHz telemetry; raise only with the telemetry rate
 #define CL_CURRENT_CHIRP_DURATION      40.0f
-#define CL_CURRENT_CHIRP_AMPLITUDE     0.8f    // A -- 0.4A was the clean ceiling before the 2026-09-22 grounding change (STM<->DRV logic GND added, PSU-common->breadboard jumper removed); 0.8f is the test of that change, baseline to beat 74.7% torn / 506 fps
+#define CL_CURRENT_CHIRP_AMPLITUDE     0.8f    // A
 #define CL_CURRENT_CHIRP_SETTLE_TICKS  20u
 
 // =============================================================================
-// Position loop — pure P, back to the phase-margin-targeted design off the
-// closed-velocity-loop chirp (crossover picked from measured phase, Kp
-// sized from the ACTUAL measured gain there, not assumed unity).
-//
-// The previous note here blamed a 65-90Hz peak on a two-inertia mechanical
-// resonance (motor/load coupling compliance) and backed this gain off to
-// gc~15Hz to stay clear of it. That theory is dropped: extending the
-// open-loop plant sweep to 300Hz (VEL_CHIRP_F_END) showed a clean,
-// monotonic single-pole rolloff with good coherence right through that
-// band -- no bump at all. A real mechanical mode is a property of P(s)
-// itself and would have to show up in a direct P(s) measurement; it
-// didn't. The actual cause was encoder_update()'s velocity filter group
-// delay (encoder.c, VEL_FILTER_N 80->20) -- fixing that took the closed
-// velocity loop's measured phase crossover from 82.7Hz to 165.4Hz and gain
-// margin from 3.7dB to 8.8dB, with no physical change needed.
-//
-// Was 954.5 (from closed_vel_bode_plot.py's phase-margin-targeted
-// auto-design: predicted gc=71.92Hz/PM=60deg/GM=8.8dB; measured whole-
-// system result was actually better than predicted -- gc=32.17Hz,
-// PM=60.7deg, pc=88.48Hz, GM=16.6dB, 32.6Hz BW, SYSID_TEST_CL_POS_CHIRP).
-// Margins were excellent, but that chirp-based verification only checks
-// small-signal stability, not idle noise -- SYSID_TEST_POSITION_STEP then
-// showed continuous chatter at rest (vq buzzing ~+-2-3V, iq_meas
-// ~+-400-800mA, vel_meas dense noise throughout, not just at step edges).
-// Reverting CURRENT_LOOP_KP/KI to the 500Hz-target gains didn't fix it,
-// which points at this gain: at 954.5, ordinary vel_meas noise (from
-// VEL_FILTER_N=20's shorter/noisier window) gets amplified into real
-// velocity-command jitter that the inner loops then chase continuously.
-// Was reverted to 200 (the last value with a clean, quiet step response)
-// on the STAGE-ATTACHED config -- that history stands, but doesn't
-// directly apply here since VEL_KP/KI were just re-designed against a
-// fresh bare-motor plant and closed-loop verified
-// (gc=44.6Hz, PM=69.2deg, GM=15.1dB, BW=80.4Hz).
-//
-// Re-derived as a frequency-ratio design instead: pick outer crossover at
-// 1/3-1/5 of the velocity loop's measured -3dB BW (80.4Hz), read H(jf)
-// AT that frequency from the same verification run's raw data (not
-// assumed unity), size Kp_pos so |Kp_pos*H(jf)/jf|=1 there:
-//   1/3  (26.80Hz): H=0.26dB   Kp_pos=163.37  PM=57.7deg
-//   1/4  (20.10Hz): H=0.13dB   Kp_pos=124.45  PM=68.0deg  <- chosen, middle of range
-//   1/5  (16.08Hz): H=0.24dB   Kp_pos=98.31   PM=73.1deg
-//
-// Closed-loop verified directly (SYSID_TEST_CL_POS_CHIRP, bare motor,
-// whole-system H_pos(s)=pos_meas/pos_cmd, margin backed out via
-// L=H_pos/(1-H_pos)): gain crossover landed at 21.11Hz, within 5% of the
-// 20.10Hz this Kp was sized for -- reading real H(jf) instead of assuming
-// unity gain got the crossover right. PM=73.0deg (beat the 68.0deg
-// prediction), GM=16.6dB. Measured -3dB bandwidth is 42.64Hz, roughly 2x
-// the crossover -- NOT the same thing as gc, don't confuse the two: BW
-// exceeding gc is the standard consequence of PM<90deg (mild peaking near
-// crossover extends the -3dB point outward), same mechanism as the
-// velocity loop's 80.4Hz BW vs its 44.6Hz gc. The number actually designed
-// for (crossover) landed almost exactly on target.
+// Position loop
 // =============================================================================
 
-// Superseded by the stage-attached + friction-feedforward design below --
-// 124.45 was sized against the bare-motor velocity loop (no stage, no
-// feedforward) and is kept here only as prior-art history, not the active
-// value.
-//
-// Re-derived after: (1) attaching the stage, (2) characterizing its
-// friction (SYSID_TEST_FRICTION_SWEEP, 3 repeat runs: Fc~94mA, Fv~1.9mA per
-// rad/s), and (3) folding that in as feedforward (velocity_loop_step(),
-// loops.c) instead of leaving the velocity PI to fight it -- confirmed by
-// re-running the CL_VEL_CHIRP amplitude=8-vs-15 comparison, which had
-// previously shown a ~2x different backed-out plant gain/tau depending on
-// amplitude (friction dominating a P-only loop's response, not a real
-// plant nonlinearity): with feedforward active, DC gain converged to
-// -0.01/-0.09dB at both amplitudes (was -8.67/-4.02dB), confirming the
-// feedforward-compensated system behaves consistently enough to design
-// against.
-//
-// Sized phase-margin-targeted (not decade-below-BW) off that feedforward-
-// compensated closed velocity loop (H(s)=vel_meas/vel_cmd, amplitude=15
-// rad/s run): DC gain -0.01dB, -3dB BW=107.0Hz. Crossover picked where H's
-// phase lag gives ~60deg position-loop PM, Kp_pos sized off the ACTUAL
-// measured gain there (0.17dB), not assumed unity:
-//   gain crossover 33.35Hz, PM=60.0deg, GM=10.7dB (open-loop check,
-//   L(s)=Kp_pos*H(s)/s)
-// Not yet closed-loop verified with a real SYSID_TEST_CL_POS_CHIRP run on
-// the stage-attached + feedforward system (bare-motor precedent above found
-// the predicted crossover landed within 5% once closed-loop verified --
-// worth repeating that check here before trusting this number blindly).
-// 2026-10-06: 260 -> 380, spending the margin the velocity observer freed up.
-//
-// The position loop is a pure integrator plus whatever the velocity loop lags,
-// so PM ~= 90deg - (velocity loop phase lag at gc). That holds to within half a
-// degree on the measured data: velocity lags 20deg at 41Hz, and the position
-// loop measured PM 70.4deg at gc 41.2Hz.
-//
-// Reading the target off the measured velocity phase:
-//     gc 56Hz -> 27.3deg lag -> PM ~63
-//     gc 60Hz -> ~29deg      -> PM ~61
-//     gc 80Hz -> 38.4deg     -> PM ~52
-// so 60Hz for a 60deg target, which is 260 * 60/41.2 = 380. Gain margin goes
-// 14.9 -> ~11.6dB.
-//
-// Where the 6.1deg came from: swapping the velocity loop's encoder boxcar for
-// the observer removed its group delay, which is lag the position loop was
-// paying for. At 41Hz that is ~4deg, and it grows with frequency -- 8.7deg at
-// 80Hz -- so the faster the position loop gets, the more the observer is worth.
-//
-// Revert pair: 260.0f, measured at gc 41.2Hz / PM 70.4deg / GM 14.9dB.
-#define POSITION_LOOP_KP        380.0f   // (rad/s) per rad -- 60deg-PM design against the LOADED velocity loop
-                                         // (crossover 33.8Hz, H=-1.76dB there), measured 2026-09-19 on the
-                                         // verified path. Previous 100 came from pre-fix captures.
-                                          // (measured 39deg PM, short of 60deg target) to restore margin.
-                                          // Closed-loop verified: gc=18.91Hz, PM=70.6deg, GM=22.0dB,
-                                          // whole-system BW=31.6Hz (SYSID_TEST_CL_POS_CHIRP)
-// 50 -> 80 rad/s (2026-10-06), about 15.9 -> 25.5 mm/s at the stage.
-//
-// 50 was not a motor or drive limit. It was set to stay below a sustained
-// 30-40Hz velocity oscillation found during trajectory cruise at ~25mm/s
-// (+-8mm/s swing, iq_cmd spiking in lockstep), confirmed by falsification not
-// to be a current-limit issue, and then deliberately not diagnosed.
-//
-// That characterisation was done on a velocity loop that no longer exists:
-// a 20-tap boxcar estimate at VEL_KP 0.045, gc ~40Hz. The leading unconfirmed
-// hypothesis was the filter's group delay, which is exactly what the observer
-// removed. Re-run on the current loop (CL_VEL_STEP at 80 rad/s, 0.25s cruise):
-//
-//     30-40Hz content   +-8 mm/s  ->  0.05-0.07 mm/s
-//
-// Over a hundredfold down -- the mode is still there but at noise level, not a
-// sustained swing. So the clamp was guarding against something that no longer
-// happens, while capping move speed and clamping the position loop's own
-// bandwidth measurement.
-//
-// 80 and not higher because 80 rad/s is exactly the speed verified clean. The
-// earlier oscillation hunt used 160; that is available once something has
-// actually been measured up there.
-#define POSITION_VEL_LIMIT      80.0f    // rad/s -- clamp P output, no windup state to clamp
+// Pure P at 1 kHz, with velocity feedforward in trajectory mode. The position
+// loop is an integrator plus the velocity loop's lag, so
+// PM ~= 90deg - (velocity loop phase lag at gc). Reading the lag off the
+// measured velocity loop: ~29deg at 60Hz, so gc 60Hz for a 60deg target,
+// which is 260 * 60/41.2 = 380.
+// Measured closed loop: crossover 61.2Hz, PM 61.2deg.
+// Revert: 260.0f (gc 41.2Hz, PM 70.4deg, GM 14.9dB).
+#define POSITION_LOOP_KP        380.0f   // (rad/s) per rad
+
+// Clamp on the position loop's velocity command, about 25.5 mm/s at the
+// stage. 80 rad/s is the fastest speed verified clean: the 30-40Hz cruise
+// oscillation seen with the old boxcar velocity estimate is at noise level
+// with the observer (+-8 mm/s -> 0.05-0.07 mm/s).
+#define POSITION_VEL_LIMIT      80.0f    // rad/s
 
 // Following-error trip (trajectory mode). If |pos_cmd - pos_fbk| exceeds this
 // while a move is running, the drive faults: bridge off, STATE_FAULT latched
-// until reset, FAULT_FOLLOWING_ERROR set in the telemetry fault_flags.
-// Normal moves run at a few counts of error (peak 0.73um = 3 counts on the
-// 2026-10-10 +2mm moves); a 1mm limit (4096 counts) is ~1370x that, so it
-// should only ever fire on a runaway -- which, before this existed, ran 43mm.
+// until reset, FAULT_FOLLOWING_ERROR set in the telemetry fault_flags. A
+// normal 10mm move peaks at 1.71um (7 counts); 1mm is 4096 counts, so this
+// only fires on a runaway.
 #define FOLLOWING_ERROR_LIMIT_MM      1.0f
 #define FOLLOWING_ERROR_LIMIT_COUNTS  \
     ((int32_t)(FOLLOWING_ERROR_LIMIT_MM * (float)ENCODER_CPR / STAGE_LEAD_MM_PER_REV))
 
 // =============================================================================
-// Closed position loop chirp — sweeps pos_cmd with the FULL cascade closed
-// (position P -> velocity PI -> current PI), to directly MEASURE the actual
-// closed-loop response of the whole system (pos_meas/pos_cmd), rather than
-// relying on the H(s)/s construction used to design POSITION_LOOP_KP.
-//
-// F_END was originally 30 Hz, sized for the OLD conservative Kp_pos=51.81
-// (~7-8 Hz expected BW). With the faster phase-margin-targeted Kp_pos=157.7,
-// a 30 Hz sweep top wasn't high enough to see the closed-loop -3dB point OR
-// the open-loop phase reach -180 deg (mag was still only -1.3dB and phase
-// only -108 deg at 30 Hz) -- widened to 150 Hz for headroom above both.
+// Closed position loop chirp (test 8)
 // =============================================================================
 
+// Chirps pos_cmd with the full cascade closed and measures pos_meas/pos_cmd
+// directly.
 #define CL_POS_CHIRP_F_START     0.1f     // Hz
 #define CL_POS_CHIRP_F_END     150.0f     // Hz
 #define CL_POS_CHIRP_DURATION   60.0f     // s
 #define CL_POS_CHIRP_SETTLE_TICKS  1000u  // 1s @ 1kHz, position held at 0 first
-// CL_POS_CHIRP_DEPLOYED -- which inner velocity loop the position chirp runs.
-//   0 = identification: PI only, friction feedforward bypassed. The Coulomb
-//       term is 0.094*tanh(vel_cmd/2.0), which flips sign at every velocity
-//       zero crossing -- twice per cycle at every frequency in the sweep -- so
-//       with it in the loop no amplitude gives a linear Bode. Use this to
-//       measure the position loop's crossover and phase margin.
-//   1 = verification: velocity_loop_step(), i.e. exactly what ships. Read it
-//       in the time domain (step response), not as a Bode plot.
+
+// Which velocity loop the position chirp runs on:
+//   0 = identification: PI only, no friction feedforward. The Coulomb term
+//       flips sign at every velocity zero crossing, so with it in the loop
+//       no amplitude gives a linear Bode. Use this for crossover and margin.
+//   1 = verification: velocity_loop_step(), exactly what ships. Read it in
+//       the time domain, not as a Bode plot.
 #define CL_POS_CHIRP_DEPLOYED    0
 
-// 0.25 -> 0.15 rad (2026-10-06). 0.25 was chosen for Kp_pos=260; at 380 it
-// drives the loop into POSITION_VEL_LIMIT near and above crossover, where the
-// error approaches the full command amplitude and asks for ~95 rad/s against a
-// 50 rad/s clamp. A saturated loop measures as a describing function, not a
-// transfer function -- which is why 46% more gain produced only 6% more
-// crossover (41.2 -> 43.8Hz) and why the PM it reported is amplitude
-// dependent. iq also sat on the 2000mA VEL_IQ_LIMIT for 0.22% of samples.
-#define CL_POS_CHIRP_AMPLITUDE  0.10f   // rad -- 0.3 saturated VEL_IQ_LIMIT 20% of the run, 0.1 was too small to measure
+// Small enough that the loop stays off POSITION_VEL_LIMIT and VEL_IQ_LIMIT
+// near crossover. A saturated loop measures as a describing function, not a
+// transfer function, and its PM depends on amplitude.
+#define CL_POS_CHIRP_AMPLITUDE  0.10f   // rad
