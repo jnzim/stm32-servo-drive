@@ -2,6 +2,7 @@
 #include "control.h"
 #include "spi.h"
 #include "config.h"
+#include <math.h>
 
 
 // Zero-cancellation design against the plant backed out of the P-only
