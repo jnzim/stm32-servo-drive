@@ -19,19 +19,19 @@ PI="${FOC_SYSID_HOST:-rpi5}"
 MIRROR="${FOC_SYSID_MIRROR:-$HOME/dev/stm/projects/foc-sysid-rpi}"
 
 echo "=== 1/4 check the shared CRC agrees with $PI ==="
-# Only crc16_calc has to match byte-for-byte: the frame layout is declared
-# separately on each side (Include/protocol.h here, a local struct in the Pi's
-# src/main.cpp). CRC16_POLY (C) and the literal 0x1021 (C++) are the same value.
-norm() { sed -n '/uint16_t crc16_calc/,/^}/p' "$1" | sed 's://.*::' | sed 's/CRC16_POLY/0x1021/g' | tr -d '[:space:]'; }
+# Only the CRC has to match byte-for-byte (crc16_table and crc16_calc): the
+# frame layout is declared separately on each side (Include/protocol.h here, a
+# local struct in the Pi's src/main.cpp).
+norm() { { sed -n '/crc16_table\[256\]/,/^};/p' "$1"; sed -n '/uint16_t crc16_calc/,/^}/p' "$1"; } | sed 's://.*::' | tr -d '[:space:]'; }
 if ssh -o ConnectTimeout=5 "$PI" 'cat ~/foc-sysid/src/protocol.cpp' > /tmp/pi_protocol_src 2>/dev/null; then
     if [ "$(norm "$DRIVE/src/protocol.c" | shasum)" != "$(norm /tmp/pi_protocol_src | shasum)" ]; then
-        echo "!!! crc16_calc differs between STM32 and Pi -- every frame would fail its check."
+        echo "!!! CRC table or crc16_calc differs between STM32 and Pi -- every frame would fail its check."
         echo "!!!   STM32: $DRIVE/src/protocol.c"
         echo "!!!   Pi   : $PI:~/foc-sysid/src/protocol.cpp"
         echo "!!! Not flashing."
         exit 1
     fi
-    echo "    crc16_calc matches on both sides"
+    echo "    CRC table and crc16_calc match on both sides"
 else
     echo "    (Pi unreachable -- skipping the cross-check)"
 fi

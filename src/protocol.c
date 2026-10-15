@@ -2,15 +2,11 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* CRC-16/CCITT-FALSE, table-driven. Check value CRC16("123456789") == 0x29B1.
+/* CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF), table-driven, ~2us per
+ * 32-byte frame. Check value: crc16_calc("123456789") == 0x29B1.
  *
- * The old bit-serial version was wrong: crc is uint16_t, so "crc <<= 1"
- * dropped bit 16 and "if (crc & 0x10000)" never fired -- the polynomial was
- * never applied and only the last two bytes affected the result, which is why
- * torn telemetry frames passed for months. It also cost 16.8us per frame
- * (DWT-measured) in the 20 kHz control ISR; this costs ~2us.
- *
- * This file and the Pi's src/protocol.cpp must stay identical.
+ * crc16_table and crc16_calc must match the Pi's src/protocol.cpp;
+ * scripts/build_all.sh checks both before flashing.
  */
 static const uint16_t crc16_table[256] = {
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
@@ -55,10 +51,4 @@ uint16_t crc16_calc(const uint8_t* data, size_t len)
         crc = (uint16_t)((crc << 8) ^ crc16_table[(crc >> 8) ^ data[i]]);
     }
     return crc;
-}
-
-bool crc16_valid(const TrajSlot* s, size_t crc_len)
-{
-    uint16_t calc = crc16_calc((const uint8_t*)s, crc_len);
-    return (calc == s->crc16);
 }

@@ -171,6 +171,5 @@ _Static_assert(sizeof(MoveCmd) == 32, "MoveCmd must be exactly 32 bytes");
  * =============================================================================
  */
 uint16_t crc16_calc(const uint8_t* data, size_t len);
-bool crc16_valid(const TrajSlot* s, size_t crc_len);
 
 #endif
