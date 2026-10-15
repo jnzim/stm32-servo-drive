@@ -38,5 +38,4 @@ float current_feedback_get_offset_c(void);
 
 bool current_feedback_sample_valid(void);
 uint32_t current_feedback_sample_count(void);
-uint32_t current_feedback_missed_count(void);
 

@@ -313,19 +313,6 @@ void current_feedback_calibrate(void)
 
 
 // =============================================================================
-// current_feedback_update
-//
-// No-op — ADC_IRQHandler owns data read.
-// Called from TIM1 ISR for compatibility; does nothing.
-// =============================================================================
-
-void current_feedback_update(void)
-{
-    /* ADC_IRQHandler owns this — no polling needed */
-}
-
-
-// =============================================================================
 // current_feedback_sample_valid
 // =============================================================================
 
@@ -342,16 +329,6 @@ bool current_feedback_sample_valid(void)
 uint32_t current_feedback_sample_count(void)
 {
     return current_sample_count;
-}
-
-
-// =============================================================================
-// current_feedback_missed_count
-// =============================================================================
-
-uint32_t current_feedback_missed_count(void)
-{
-    return current_missed_count;
 }
 
 
