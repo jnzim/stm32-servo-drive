@@ -665,7 +665,7 @@ Kp from the measured loop: gain for ~67&deg; PM, not from a bandwidth target</di
  </video>
  </div>
  <p class="step-desc">
- After friction feedforward is added, the error left at cruise is the <code>v/K<sub>p</sub></code> lag of a P position loop: 38.4&micro;m at 10mm/s with <code>K<sub>p</sub>=260</code>, which works back to 260.6, within 0.2% of the setting. Velocity feedforward removes it by passing the generator's speed straight to the velocity loop.
+ After friction feedforward is added, the error left at cruise is the <code>v/K<sub>p</sub></code> lag of a P position loop: 38.4&micro;m at 10mm/s. Velocity feedforward removes it by passing the generator's speed straight to the velocity loop.
  </p>
 
  <div style="margin-top:36px; padding-top:26px; border-top:1px solid var(--border);">
@@ -689,16 +689,12 @@ Kp from the measured loop: gain for ~67&deg; PM, not from a bandwidth target</di
  <li>
  Position loop: predicted 70&deg; and 61&deg; phase margin, measured 70.4&deg; and 60.5&deg;.
  </li>
- <li>
- Moves: following error gives a position gain of 260.6 against the 260 that was set.
- </li>
+ 
  </ul>
  <p class="step-desc">
  Crossovers of 504Hz, 117Hz, and 61Hz with 61 to 73&deg; of margin. Friction feedforward fixed the amplitude dependence, and velocity feedforward cut following error from 38.4&micro;m to 0.06&micro;m.
  </p>
- <p class="step-desc">
- The telemetry had to be fixed first. SPI frames were tearing because of a buffer overwrite, a CRC bug, and a missing ground wire between the STM32 and the gate driver. After the fix, a 60 second loaded sweep had zero torn frames.
- </p>
+ 
  <p class="step-desc">
  Same process for any servo axis: measure the plant, design to it, measure the result.
  </p>
@@ -708,7 +704,7 @@ Kp from the measured loop: gain for ~67&deg; PM, not from a bandwidth target</di
  <div class="step-head"><span class="step-num">12</span><h2>Open items</h2></div>
  <ul class="step-desc" style="padding-left:1.3em; margin-top:0;">
  <li>
- Current loop bandwidth: with the SPI grounding fixed the link runs clean at 4MHz. Raise telemetry above 5kHz (needs a DMA ring on the STM32) and use it to push the current loop above 500Hz.
+ Current loop bandwidth: raise telemetry above 5kHz (needs a DMA ring on the STM32) and use it to push the current loop above 500Hz.
  </li>
  <li>Add a section on the velocity observer design.</li>
  <li>Add a section on the jerk limited profile design.</li>
