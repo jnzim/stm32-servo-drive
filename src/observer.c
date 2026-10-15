@@ -46,11 +46,6 @@ void observer_init(void)
 
 void observer_update(int32_t counts, float iq_meas)
 {
-    /* Position is kept relative to the first sample. Absolute encoder counts
-     * grow without bound, and a float carrying a large integer part loses the
-     * fractional resolution that makes the estimate worth having. Re-basing
-     * costs nothing because only differences matter downstream. This zero is
-     * the observer's own, independent of the servo's absolute zero. */
     if (!primed)
     {
         counts_zero = counts;
