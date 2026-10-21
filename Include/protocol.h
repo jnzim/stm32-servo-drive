@@ -11,6 +11,14 @@
  */
 #define SPI2_TRANSACTION_BYTES  32u
 
+/* Minimum CS-high time between transactions. The STM re-arms SPI2 on every
+ * CS rising edge (spi.c); that handler can wait behind the 20 kHz control
+ * ISR, so the next transaction must not start sooner than this. Sized from
+ * sysid, the heaviest mode (2026-10-20): control ISR up to 47 us of its
+ * 50 us period, CS edge to re-arm done up to ~135 us; at 120 us about 0.15%
+ * of re-arms still finish late (cnt_rearm_late) and that frame fails CRC. */
+#define SPI2_MIN_CS_GAP_US      120u
+
 /* Opcodes (wire values shared with the Pi; never renumber) */
 #define SPI2_OP_DATA            0x02  /* TrajSlot (ring buffer) */
 #define SPI2_OP_MOVE_CMD        0x07  /* single-command move -- see MoveCmd below */
