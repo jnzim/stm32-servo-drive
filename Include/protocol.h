@@ -36,7 +36,9 @@ typedef struct __attribute__((packed)) {
     uint32_t timestamp_ms;
     uint8_t  drive_state;       /* DRIVE_IDLE/DRIVE_SERVO_ON/etc above */
     uint8_t  fault_flags;
-    uint32_t samples_consumed;
+    uint16_t samples_consumed;  /* 1 kHz ticks into the move; wraps at 65 s */
+    uint8_t  move_seq;          /* seq of the last MoveCmd accepted (the ack) */
+    uint8_t  spare;
     int16_t  iq_cmd;            /* mA */
     int16_t  i_q_fbk;           /* mA */
     uint16_t crc16;             /* covers bytes 0..(offsetof-1) -- TELEM_CRC_LEN below.
@@ -108,14 +110,19 @@ typedef struct __attribute__((packed)) {
 } TrajSlot;
 
 /* =============================================================================
- * MoveCmd — 32 bytes, sent once per move (SPI2_OP_MOVE_CMD)
+ * MoveCmd — 32 bytes, one per move (SPI2_OP_MOVE_CMD)
  *
  * Pi -> STM: one command per move. The STM generates the profile itself
  * (trap_gen.c or minjerk_gen.c, per TRAJ_PROFILE) from these three numbers.
  *
+ * seq is the handshake: the STM runs a MoveCmd only if its seq differs from
+ * the last one it accepted, and echoes that seq in TelemetryFrame.move_seq.
+ * The Pi picks seq = move_seq + 1 (skipping 0) and resends until the echo
+ * matches, so a lost frame is retried and a repeat is never run twice.
+ *
  * Structure:
  *   [0]      opcode (0x07 = MOVE_CMD)
- *   [1]      seq
+ *   [1]      seq (never 0)
  *   [2..5]   target_pos (int32, counts, RELATIVE to wherever the stage
  *            actually is when the move starts -- a delta, not an absolute
  *            position. Sending the same MoveCmd twice moves twice.)

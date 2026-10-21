@@ -295,6 +295,13 @@ void spi_update_telem(const TelemetryFrame *frame)
  * =============================================================================*/
 
 #if RUN_MODE != RUN_MODE_SYSID
+static volatile uint8_t move_seq_accepted = 0;
+
+uint8_t spi_move_seq(void)
+{
+    return move_seq_accepted;
+}
+
 static void spi2_rx_parse(const uint8_t *frame)
 {
     if (frame[0] == SPI2_OP_MOVE_CMD)
@@ -305,13 +312,15 @@ static void spi2_rx_parse(const uint8_t *frame)
         uint16_t calc = crc16_calc((const uint8_t *)&cmd, MOVE_CMD_CRC_LEN);
         if (calc == cmd.crc16)
         {
-            // The Pi resends the MoveCmd in every frame until it sees
-            // SERVO_ON. Accept it only while IDLE with no move running, so
-            // each command starts exactly one move.
-            if (drive_is_idle() && !foc_trajectory_move_active())
+            // The Pi resends the MoveCmd until move_seq echoes its seq, so
+            // a repeat of the accepted seq is ignored. A new seq waits while
+            // a move is running; the Pi keeps sending it.
+            if (cmd.seq != move_seq_accepted &&
+                drive_is_idle() && !foc_trajectory_move_active())
             {
                 foc_trajectory_start_move(cmd.target_pos, cmd.vel_max, cmd.accel_max);
                 drive_request_servo_on();
+                move_seq_accepted = cmd.seq;
             }
         }
         else

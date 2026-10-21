@@ -21,7 +21,7 @@
 #include "trap_gen.h"
 #include "minjerk_gen.h"
 #include "drive.h" // drive_is_servo_on() / drive_get_state()
-#include "spi.h"   // spi_update_telem()
+#include "spi.h"   // spi_update_telem(), spi_move_seq()
 
 #include <math.h>
 #include <stdint.h>
@@ -238,7 +238,8 @@ void foc_trajectory_position_tick(void)
         .timestamp_ms     = tick_ms,
         .drive_state      = (uint8_t)drive_get_state(),
         .fault_flags      = traj_fault_flags,
-        .samples_consumed = samples_consumed,
+        .samples_consumed = (uint16_t)samples_consumed,
+        .move_seq         = spi_move_seq(),
         .iq_cmd           = (int16_t)lroundf(iq_cmd * 1000.0f),      // A -> mA
         .i_q_fbk          = (int16_t)lroundf(foc_iq_meas * 1000.0f), // A -> mA
     };

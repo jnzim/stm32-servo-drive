@@ -4,6 +4,7 @@
 
 void spi_init(void);
 void spi_update_telem(const TelemetryFrame *frame);
+uint8_t spi_move_seq(void);   // seq of the last MoveCmd accepted (trajectory mode)
 
 void spi_sysid_update_latest(int16_t ia_mA,
                              int16_t ib_mA,
