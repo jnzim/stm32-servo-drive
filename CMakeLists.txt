@@ -51,7 +51,7 @@ target_compile_options(fw.elf PRIVATE
         -fno-builtin
         -fdata-sections
         -ffunction-sections
-        -Og
+        -O2
         -g3
         -Wall
         -Wextra
