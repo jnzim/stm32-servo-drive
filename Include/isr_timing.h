@@ -12,24 +12,22 @@
 //                   be on screen; isr_cycles_max[] catches the one bad tick
 //                   in a 40s chirp. Read the arrays in the debugger.
 //   GPIO marker  -- shows the *interleaving*: TIM1_UP preempting ADC, the
-//                   SPI ISRs being pushed out, tail-chaining. Cycle counts
+//                   SPI ISR being pushed out, tail-chaining. Cycle counts
 //                   can't show that, and at 10kHz telemetry it's the thing
 //                   that actually decides whether the budget holds.
 //
-// Budget: the control loop runs at 20kHz, so all four ISRs together have
+// Budget: the control loop runs at 20kHz, so all three ISRs together have
 // 50us (5000 cycles @ 100MHz) per tick. CPU load = sum of rate x duration.
 //
 // Markers are on GPIOC, set up in isr_timing_init().
 
 #define ISR_T_TIM1      0u
 #define ISR_T_ADC       1u
-#define ISR_T_DMA3      2u
-#define ISR_T_EXTI      3u
-#define ISR_T_COUNT     4u
+#define ISR_T_EXTI      2u
+#define ISR_T_COUNT     3u
 
 #define ISR_PIN_TIM1    5u      /* PC5 */
 #define ISR_PIN_ADC     4u      /* PC4 */
-#define ISR_PIN_DMA3    7u      /* PC7 */
 #define ISR_PIN_EXTI    9u      /* PC9 -- NOT PC8: that is PIN_DRV_CS, the
                                  * DRV8353 SPI1 chip select (board_f411.h) */
 

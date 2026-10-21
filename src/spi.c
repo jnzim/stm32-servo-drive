@@ -6,9 +6,9 @@
 // highest priority. TX is never realigned: after a short transaction its
 // byte phase can drift, and the Pi resyncs by CRC (foc-sysid).
 //
-// RX: DMA1 Stream3, CIRC + double buffer. Each completed 32-byte frame is
-// parsed in DMA1_Stream3_IRQHandler. The CS rising edge (EXTI12) puts the
-// RX DMA back at byte 0 after any transaction that was not 32 bytes.
+// RX: DMA1 Stream3, CIRC + double buffer, no DMA interrupt. CS marks the
+// frame: on the CS rising edge (EXTI12) a 32-byte transaction is parsed, and
+// any other length puts the RX DMA back at byte 0.
 
 #include "spi.h"
 #include "isr_timing.h"
@@ -28,7 +28,7 @@
  * Debug counters (read with the debugger)
  * =============================================================================*/
 
-volatile uint32_t cnt_telem      = 0;   /* RX frames completed            */
+volatile uint32_t cnt_telem      = 0;   /* 32-byte RX frames at CS edge   */
 volatile uint32_t cnt_error      = 0;   /* MoveCmd CRC failures           */
 volatile uint32_t cnt_cs         = 0;   /* CS rising edges                */
 volatile uint32_t cnt_rx_realign = 0;   /* RX DMA realigned after a short */
@@ -40,8 +40,8 @@ volatile uint32_t cnt_rx_realign = 0;   /* RX DMA realigned after a short */
  * =============================================================================*/
 
 /*
- * Double-buffered RX: DMA fills one buffer while the IRQ reads the frame
- * that just completed in the other, so the next transaction cannot
+ * Double-buffered RX: DMA fills one buffer while the CS handler reads the
+ * frame that just completed in the other, so the next transaction cannot
  * overwrite a frame mid-read.
  */
 static volatile uint8_t spi2_rx_buf[2][SPI2_TRANSACTION_BYTES];
@@ -229,13 +229,9 @@ void spi_init(void)
         (0u << DMA_SxCR_CHSEL_Pos) |
         DMA_SxCR_MINC              |
         DMA_SxCR_CIRC              |
-        DMA_SxCR_DBM               |
-        DMA_SxCR_TCIE;
+        DMA_SxCR_DBM;
 
     DMA1_Stream3->CR |= DMA_SxCR_EN;
-
-    NVIC_SetPriority(DMA1_Stream3_IRQn, 2);
-    NVIC_EnableIRQ(DMA1_Stream3_IRQn);
 
     /*
      * TX DMA: TX buffer -> SPI2->DR -> Pi MISO. Free-running CIRC, set up
@@ -295,27 +291,12 @@ void spi_update_telem(const TelemetryFrame *frame)
 
 
 /* =============================================================================
- * SPI RX complete IRQ (DMA1 Stream3)
+ * spi2_rx_parse — act on one complete 32-byte frame from the Pi
  * =============================================================================*/
 
-void DMA1_Stream3_IRQHandler(void)
-{
-    if (!(DMA1->LISR & DMA_LISR_TCIF3)) {
-        return;
-    }
-
-    ISR_TIME_BEGIN(ISR_T_DMA3, ISR_PIN_DMA3);
-
-    dma_stream3_clear_flags();
-
-    cnt_telem++;
-
-    // CT is the buffer DMA is filling now; the completed frame is the other.
 #if RUN_MODE != RUN_MODE_SYSID
-    uint32_t ct            = (DMA1_Stream3->CR & DMA_SxCR_CT) ? 1u : 0u;
-    uint32_t completed_idx = 1u - ct;
-    const uint8_t *frame   = (const uint8_t *)spi2_rx_buf[completed_idx];
-
+static void spi2_rx_parse(const uint8_t *frame)
+{
     if (frame[0] == SPI2_OP_MOVE_CMD)
     {
         MoveCmd cmd;
@@ -338,32 +319,23 @@ void DMA1_Stream3_IRQHandler(void)
             cnt_error++;
         }
     }
-#endif  /* MoveCmd only in trajectory mode: sysid never starts a move */
-
-    ISR_TIME_END(ISR_T_DMA3, ISR_PIN_DMA3);
 }
+#endif  /* MoveCmd only in trajectory mode: sysid never starts a move */
 
 
 /* =============================================================================
- * CS rising edge IRQ (EXTI12) — end of transaction, RX realign
+ * CS rising edge IRQ (EXTI12) — end of transaction
  * =============================================================================*/
 /*
- * Fires when the Pi releases CS. If the transaction was not a whole 32-byte
- * frame (NDTR != 32), puts the RX DMA back at byte 0 of buffer 0.
- *
- * The RX DMA is free-running with nothing tying it to CS, so a short or
- * long transaction (the Pi's 63-byte resync read, a glitch) would leave
- * every later MoveCmd rotated, and it would be dropped. Only the partial
- * frame is discarded. TX is not touched; the Pi realigns to it.
+ * Puts the RX DMA back at byte 0 of buffer 0 after a transaction that was
+ * not a whole 32-byte frame (the Pi's resync reads, a glitch). The RX DMA is
+ * free-running with nothing tying it to CS, so without this every later
+ * frame would arrive rotated. TX is not touched; the Pi realigns to it.
  */
 static void spi2_rx_realign(void)
 {
     DMA1_Stream3->CR &= ~DMA_SxCR_EN;
     for (uint32_t i = 0u; (DMA1_Stream3->CR & DMA_SxCR_EN) && i < 1000u; i++) { }
-
-    /* Disabling mid-transfer sets TCIF; clear it so the RX ISR does not
-     * treat the discarded partial frame as a completed one. */
-    dma_stream3_clear_flags();
 
     /* Drop any byte left in the SPI receiver, and clear OVR (DR then SR). */
     while (SPI2->SR & SPI_SR_RXNE) { (void)SPI2->DR; }
@@ -376,6 +348,16 @@ static void spi2_rx_realign(void)
     cnt_rx_realign++;
 }
 
+/*
+ * Fires when the Pi releases CS, once per transaction. CS is the frame
+ * boundary: a transaction of exactly 32 bytes is a frame and is parsed here;
+ * anything else is discarded by a realign.
+ *
+ * NDTR == 32 means the DMA wrapped, so a whole frame landed and CT flipped:
+ * the frame is in buffer 1 - CT, and the next transaction fills the other
+ * one. The opcode byte is cleared after the parse, so a CS edge with no
+ * new frame behind it (a glitch) cannot run the same command twice.
+ */
 void EXTI15_10_IRQHandler(void)
 {
     if (!(EXTI->PR & (1u << PIN_RPI_NSS))) return;
@@ -385,8 +367,21 @@ void EXTI15_10_IRQHandler(void)
     EXTI->PR = (1u << PIN_RPI_NSS);
     cnt_cs++;
 
-    if (DMA1_Stream3->NDTR != SPI2_TRANSACTION_BYTES)
+    if (DMA1_Stream3->NDTR == SPI2_TRANSACTION_BYTES)
+    {
+        cnt_telem++;
+#if RUN_MODE != RUN_MODE_SYSID
+        uint32_t ct          = (DMA1_Stream3->CR & DMA_SxCR_CT) ? 1u : 0u;
+        volatile uint8_t *rx = spi2_rx_buf[1u - ct];
+
+        spi2_rx_parse((const uint8_t *)rx);
+        rx[0] = 0u;
+#endif
+    }
+    else
+    {
         spi2_rx_realign();
+    }
 
     ISR_TIME_END(ISR_T_EXTI, ISR_PIN_EXTI);
 }
