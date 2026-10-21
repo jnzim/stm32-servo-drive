@@ -6,7 +6,6 @@
 #include "clock.h"
 #include "spi.h"
 #include "drive.h"
-#include "ringBuffer.h"
 #include "config.h"
 #include "encoder.h"
 #include "drv8353.h"
@@ -98,10 +97,7 @@ int main(void)
     clock_init();
     encoder_init();
     drive_init();
-#if SPI_TELEM_ENABLED
     spi_init();
-#endif
-    ring_init();
 
     // DWT cycle counter, GPIOC clock, and the ISR marker pins.
     isr_timing_init();

@@ -13,7 +13,6 @@ add_executable(fw.elf
     src/spi.c
     src/protocol.c
     src/encoder.c
-    src/ringBuffer.c
     src/control.c
     src/drive.c
     src/loops.c
