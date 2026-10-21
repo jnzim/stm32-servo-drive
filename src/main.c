@@ -58,9 +58,9 @@ void TIM1_UP_TIM10_IRQHandler(void)
 }
 
 // =============================================================================
-// SysTick_Handler — 1 kHz, lowest priority. Drive state machine and position
-// tick. The position tick runs every tick, not only while servo-on, because
-// it always sends telemetry; that is how the Pi sees the drive return to IDLE.
+// SysTick_Handler — 1 kHz, lowest priority. Drive state machine and
+// telemetry. Telemetry goes out every tick, not only while servo-on; that is
+// how the Pi sees the drive return to IDLE.
 // =============================================================================
 void SysTick_Handler(void)
 {
@@ -72,7 +72,7 @@ void SysTick_Handler(void)
     // Trajectory mode only; in sysid, foc_sysid_step() owns the motor.
 #if RUN_MODE != RUN_MODE_SYSID
     drive_sm_run();
-    foc_trajectory_position_tick();
+    foc_trajectory_telemetry_tick();
 #endif
 }
 

@@ -9,13 +9,13 @@ extern PIState velocity_loop;
 extern PState  position_loop;
 
 // ── Inter-loop setpoints ──────────────────────────────────────────────────────
-// vel_cmd_rad_sec: written by the position loop (SysTick), read by the
-// velocity loop (TIM1 ISR).
+// vel_cmd_rad_sec: written by the position loop, read by the velocity loop,
+// both in the TIM1 ISR.
 extern volatile float vel_cmd_rad_sec;
 extern float          iq_cmd;
 
 // ── Rate dividers ─────────────────────────────────────────────────────────────
-extern uint32_t vel_div;
+extern uint32_t loop_div;   // 0..19 tick counter for the outer loops (trajectory)
 
 // ── Sequencing ────────────────────────────────────────────────────────────────
 extern volatile uint8_t first_sample_ready;

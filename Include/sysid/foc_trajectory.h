@@ -6,8 +6,8 @@
 //   - d-axis alignment stage
 //   - closed current loop  @ 20 kHz
 //   - closed velocity loop @ 5 kHz
-//   - move generator and position loop live in SysTick @ 1 kHz
-//     (foc_trajectory_position_tick) and write vel_cmd_rad_sec via loops.h
+//   - move generator and position loop @ 1 kHz
+// Telemetry is sent from SysTick (foc_trajectory_telemetry_tick).
 
 #pragma once
 
@@ -17,17 +17,17 @@
 // foc_trajectory_step — call from TIM1 ISR at 20 kHz, RUN_MODE_CLOSED_LOOP only
 void foc_trajectory_step(void);
 
-// foc_trajectory_position_tick — call from SysTick at 1 kHz, every tick
-void foc_trajectory_position_tick(void);
+// foc_trajectory_telemetry_tick — call from SysTick at 1 kHz, every tick
+void foc_trajectory_telemetry_tick(void);
 
 // foc_trajectory_start_move — request a move. target_pos is a DELTA in
 // counts from wherever the stage actually is when the move starts, not an
-// absolute position -- resolved against the live encoder position inside
-// foc_trajectory_position_tick(), not here. vel_max/accel_max are
+// absolute position -- resolved against the live encoder position when the
+// move starts, not here. vel_max/accel_max are
 // counts/s / counts/s^2 magnitudes. Safe to call before RUN begins (e.g.
 // from the SPI RX ISR while still in ALIGN) — just latches the request;
-// foc_trajectory_position_tick() starts the generator for real once
-// traj_stage reaches RUN.
+// the position loop starts the generator for real once traj_stage
+// reaches RUN.
 void foc_trajectory_start_move(int32_t target_pos, int32_t vel_max, int32_t accel_max);
 
 // foc_trajectory_move_active — true from a requested/running move until the

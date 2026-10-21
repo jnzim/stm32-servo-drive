@@ -17,7 +17,7 @@ volatile float vel_cmd_rad_sec  = 0.0f;
 float          iq_cmd           = 0.0f;
 
 // ── Rate dividers ─────────────────────────────────────────────────────────────
-uint32_t vel_div = 0;
+uint32_t loop_div = 0;
 
 // ── Sequencing ────────────────────────────────────────────────────────────────
 volatile uint8_t first_sample_ready = 0;
@@ -39,7 +39,7 @@ void loops_reset(void)
 
     vel_cmd_rad_sec    = 0.0f;
     iq_cmd             = 0.0f;
-    vel_div            = 0;
+    loop_div           = 0;
     samples_consumed   = 0;
     first_sample_ready = 0;
 }
