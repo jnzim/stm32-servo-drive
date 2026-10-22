@@ -172,6 +172,11 @@
 // Test 6 (verification) runs the deployed VEL_KP/VEL_KI; read H only.
 #define CL_VEL_CHIRP_PONLY_KP    0.0239f
 
+// Test 14 only: 1 adds the friction feedforward on top of the P-only loop,
+// for the FF on/off DC-gain comparison. C(s) is then no longer Kp, so leave
+// it 0 for plant identification.
+#define CL_VEL_PLANT_FF          0
+
 // Test 6 only: 1 adds friction feedforward on top of the deployed PI. 0 is
 // the loop the position chirp's identification mode sits on.
 #define CL_VEL_CHIRP_FF          0

@@ -402,6 +402,11 @@ static void run_cl_vel_chirp(ClVelController ctrl)
         if (ctrl == CL_VEL_CTRL_PLANT_ID)
         {
             iq_cmd = pi_step(&vel_plant_id_loop, vel_cmd_rad_sec - vel_meas_rad, DT_VELOCITY);
+#if CL_VEL_PLANT_FF
+            iq_cmd += (FRICTION_FF_COULOMB_MA * 0.001f) *
+                          tanhf(vel_cmd_rad_sec / FRICTION_FF_SMOOTH_RAD_S) +
+                      (FRICTION_FF_VISCOUS_MA_PER_RADS * 0.001f) * vel_cmd_rad_sec;
+#endif
         }
         else
         {
