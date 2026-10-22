@@ -57,9 +57,11 @@ float velocity_loop_step(float vel_cmd_rad_sec, float vel_meas_rad, float dt)
 {
     float iq = pi_step(&velocity_loop, vel_cmd_rad_sec - vel_meas_rad, dt);
 
+#if FRICTION_FF_ENABLE
     float ff_sign = tanhf(vel_cmd_rad_sec / FRICTION_FF_SMOOTH_RAD_S);
     iq += (FRICTION_FF_COULOMB_MA * 0.001f) * ff_sign +
           (FRICTION_FF_VISCOUS_MA_PER_RADS * 0.001f) * vel_cmd_rad_sec;
+#endif
 
     return iq;
 }

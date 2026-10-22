@@ -185,6 +185,8 @@
 // Fc 90.6mA, Fv 2.13 mA per rad/s, inside the sweep's +-5mA repeatability, so
 // the constants were left alone. tanh instead of sign() so the Coulomb term
 // does not chatter at zero velocity.
+// 0 turns the friction feedforward off, for before/after move captures.
+#define FRICTION_FF_ENABLE                1
 #define FRICTION_FF_COULOMB_MA           94.0f   // mA
 #define FRICTION_FF_VISCOUS_MA_PER_RADS   1.9f   // mA per rad/s
 #define FRICTION_FF_SMOOTH_RAD_S          2.0f   // rad/s
