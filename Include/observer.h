@@ -66,8 +66,9 @@
 //
 //     2026-09-19 : K=177.2, tau=14.19ms  ->  12488
 //     2026-10-06 : K= 79.25, tau= 6.66ms ->  11901
+//     2026-10-22 : K= 82.07, tau= 6.85ms ->  11976
 //
-// K and tau differ by more than 2x between them; K/tau agrees to 5%.
+// K and tau differ by more than 2x between the first two; K/tau agrees to 5%.
 //
 // The value in use is NOT the identified one. 11900 comes from the valid
 // P-only back-out; 19800 came from a run with the deployed PI in the loop,

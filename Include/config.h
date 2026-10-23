@@ -36,7 +36,7 @@
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_CL_VEL_PLANT_CHIRP       14
 
-#define SYSID_TEST SYSID_TEST_CL_VEL_PLANT_CHIRP
+#define SYSID_TEST SYSID_TEST_CL_POS_CHIRP
 
 // =============================================================================
 // Math
@@ -125,11 +125,16 @@
 // =============================================================================
 
 // PI on the observer velocity, loaded stage. Plant from the P-only chirp
-// (SYSID_TEST_CL_VEL_PLANT_CHIRP): K = 177.2 rad/s/A, tau = 14.19 ms, pole
-// at 11.2Hz. Ki = Kp * 2*pi*11.2 puts the PI zero on that pole.
-// Measured closed loop: crossover 116.9Hz, PM 67.0deg.
+// (SYSID_TEST_CL_VEL_PLANT_CHIRP, 15 rad/s, 2026-10-22): K = 82.07 rad/s/A,
+// tau = 6.85 ms, pole at 23.2Hz; three earlier runs at 15 rad/s gave pole
+// 23-26Hz. Ki = Kp * 2*pi*23.2 puts the PI zero on that pole. Ki was 6.34
+// (zero at 11.2Hz, from the 2026-09-19 fit), which left a 0.3-0.6dB sag in
+// the closed loop from 10 to 80Hz; at 13.13 it is flat within 0.2dB.
+// Measured (2026-10-22): through the observer crossover 208Hz, PM ~79deg;
+// through the encoder 120.5Hz, 63.5deg. Position loop on top: 66.0Hz,
+// PM 59.8deg, GM 10.4dB.
 #define VEL_KP        0.09000f   // A / (rad/s)
-#define VEL_KI        6.3400f    // A / rad
+#define VEL_KI        13.130f    // A / rad
 
 // Velocity PI output clamp. The motor's 2.91A rating is continuous (RMS,
 // thermal), not a peak limit: on a 0.15 rad position chirp iq ran 0.73A RMS
@@ -161,7 +166,7 @@
 // =============================================================================
 
 #define CL_VEL_CHIRP_F_START     0.5f
-#define CL_VEL_CHIRP_F_END     200.0f
+#define CL_VEL_CHIRP_F_END     400.0f
 #define CL_VEL_CHIRP_DURATION   60.0f
 #define CL_VEL_CHIRP_AMPLITUDE  15.0f     // rad/s
 
@@ -265,7 +270,7 @@
 // Chirps pos_cmd with the full cascade closed and measures pos_meas/pos_cmd
 // directly.
 #define CL_POS_CHIRP_F_START     0.1f     // Hz
-#define CL_POS_CHIRP_F_END     150.0f     // Hz
+#define CL_POS_CHIRP_F_END     300.0f     // Hz
 #define CL_POS_CHIRP_DURATION   60.0f     // s
 #define CL_POS_CHIRP_SETTLE_TICKS  1000u  // 1s @ 1kHz, position held at 0 first
 
