@@ -130,9 +130,9 @@
 // 23-26Hz. Ki = Kp * 2*pi*23.2 puts the PI zero on that pole. Ki was 6.34
 // (zero at 11.2Hz, from the 2026-09-19 fit), which left a 0.3-0.6dB sag in
 // the closed loop from 10 to 80Hz; at 13.13 it is flat within 0.2dB.
-// Measured (2026-10-22): through the observer crossover 208Hz, PM ~79deg;
-// through the encoder 120.5Hz, 63.5deg. Position loop on top: 66.0Hz,
-// PM 59.8deg, GM 10.4dB.
+// Measured (2026-10-22, OBS_K_ACC 11976): through the observer crossover
+// 229.7Hz, PM 72.6deg; through the encoder 120.9Hz, 64.9deg. Position loop
+// on top: 64.5Hz, PM 60.9deg, GM 11.0dB.
 #define VEL_KP        0.09000f   // A / (rad/s)
 #define VEL_KI        13.130f    // A / rad
 

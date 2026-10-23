@@ -61,8 +61,7 @@
 //
 // Not measured directly. For a first-order mechanical plant w/i = K/(tau*s+1)
 // you have K = Kt/B and tau = J/B, so K/tau = Kt/J -- and that RATIO is far
-// better conditioned than either parameter. Two P-only identifications a month
-// apart:
+// better conditioned than either parameter. P-only identifications:
 //
 //     2026-09-19 : K=177.2, tau=14.19ms  ->  12488
 //     2026-10-06 : K= 79.25, tau= 6.66ms ->  11901
@@ -70,21 +69,24 @@
 //
 // K and tau differ by more than 2x between the first two; K/tau agrees to 5%.
 //
-// The value in use is NOT the identified one. 11900 comes from the valid
-// P-only back-out; 19800 came from a run with the deployed PI in the loop,
-// where the back-out is not valid. But at 11900 the velocity loop went
-// unstable, swinging +-52 rad/s against a +-15 rad/s command and driving the
-// stage into its hard stops (2026-10-06).
+// 11976 is the 2026-10-22 identified value. Until then this was 19800, from
+// a run with the deployed PI in the loop, where the back-out is not valid:
+// at 11900 the velocity loop went unstable on 2026-10-06, swinging +-52 rad/s
+// against a +-15 rad/s command into the hard stops. That did not repeat on
+// 2026-10-22, after Ki 13.13, -O2 and the position loop moving into the TIM1
+// ISR; which of those changes fixed it is not known.
 //
-// The mechanism is not understood. Naively a smaller model term should lean
-// the estimate harder on the encoder correction and behave more like the old
-// filter, not less stably.
+// Measured 2026-10-22 at 11976, with 19800 the same day in brackets:
+//   velocity loop, through the encoder : 120.9Hz, PM 64.9deg  (120.7, 63.5)
+//   velocity loop, through the observer: 229.7Hz, PM 72.6deg  (207.5, 79.8)
+//   position loop: 64.5Hz, PM 60.9deg, GM 11.0dB              (64.7, 60.5, 10.6)
+//   10mm moves: 1.71um peak, 0.30um rms                        (1.46, 0.29)
 //
-// What it does establish: K_ACC is not just a model constant. The observer sits
-// inside the velocity feedback path, so this is a LOOP parameter and changing
-// it changes stability. Validate any change at small amplitude and short
-// duration with the stage centred, before a full sweep.
-#define OBS_K_ACC   19800.0f
+// K_ACC is not just a model constant. The observer sits inside the velocity
+// feedback path, so this is a LOOP parameter and changing it changes
+// stability. Validate any change at small amplitude and short duration with
+// the stage centred, before a full sweep.
+#define OBS_K_ACC   11976.0f
 
 // Viscous damping as a current, derived from the friction sweep's own constant
 // rather than written out again -- it is the same physical quantity, and two
