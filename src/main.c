@@ -85,14 +85,10 @@ int main(void)
     // Enable full access to FPU coprocessors CP10 and CP11.
     SCB->CPACR |= ((3UL << (10u * 2u)) | (3UL << (11u * 2u)));
 
-    // Barrier required before any FPU instruction (like __set_FPSCR below) --
-    // without it the pipeline can still see the FPU as disabled and fault.
+    // Barrier required before any FPU instruction -- without it the pipeline
+    // can still see the FPU as disabled and fault.
     __DSB();
     __ISB();
-
-    // Flush-to-zero: denormal operands are slow on the FPU, and their
-    // precision does not matter for control math.
-    __set_FPSCR(__get_FPSCR() | (1u << 24));
 
     clock_init();
     encoder_init();
@@ -129,10 +125,9 @@ int main(void)
     current_feedback_calibrate();
     pwm_enable();
 
+    // SysTick_Config sets SysTick to priority 15, the lowest: TIM1 update is
+    // 0, ADC 1, SPI DMA/EXTI 2.
     SysTick_Config(SystemCoreClock / 1000u);
-
-    // Lowest priority: TIM1 update is 0, ADC 1, SPI DMA/EXTI 2.
-    NVIC_SetPriority(SysTick_IRQn, 15);
 
     system_initialized = true;
 

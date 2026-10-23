@@ -4,6 +4,23 @@ volatile uint32_t isr_cycles_last[ISR_T_COUNT];
 volatile uint32_t isr_cycles_max[ISR_T_COUNT];
 volatile uint32_t isr_calls[ISR_T_COUNT];
 
+static void cycle_counter_init(void)
+{
+    // DWT->CYCCNT counts CPU cycles (100 per us). Wraps every 43 s;
+    // the unsigned subtraction in ISR_TIME_END still works across a wrap.
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT       = 0u;
+    DWT->CTRL        |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+// Push-pull output, low speed (fast edges ring on the scope probe), idle low.
+static void marker_pin_init(uint32_t pin)
+{
+    GPIOC->MODER   = (GPIOC->MODER & ~(3u << (pin * 2u))) | (1u << (pin * 2u));
+    GPIOC->OSPEEDR &= ~(3u << (pin * 2u));
+    GPIOC->BSRR     = 1u << (pin + 16u);
+}
+
 void isr_timing_init(void)
 {
     for (uint32_t i = 0u; i < ISR_T_COUNT; i++)
@@ -13,29 +30,12 @@ void isr_timing_init(void)
         isr_calls[i]       = 0u;
     }
 
-    /* DWT is behind the trace enable; CYCCNT is free-running once armed and
-     * is never reset again, so the subtraction in ISR_TIME_END is allowed to
-     * wrap (unsigned, 43s at 100MHz -- longer than any single ISR). */
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT->CYCCNT       = 0u;
-    DWT->CTRL        |= DWT_CTRL_CYCCNTENA_Msk;
+    cycle_counter_init();
 
-    /* PC4 / PC5 / PC9 as push-pull outputs, idle low. */
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
     (void)RCC->AHB1ENR;
 
-    const uint32_t pins[3] = { ISR_PIN_ADC, ISR_PIN_TIM1, ISR_PIN_EXTI };
-
-    for (uint32_t i = 0u; i < 3u; i++)
-    {
-        GPIOC->MODER   &= ~(3u << (pins[i] * 2u));
-        GPIOC->MODER   |=  (1u << (pins[i] * 2u));   /* output */
-        /* Low speed deliberately. These pulses are microseconds wide, so
-         * slew rate buys nothing, and fast edges ring on a scope probe's
-         * ground lead hard enough to double-trigger and read as two pulses
-         * where there is one. */
-        GPIOC->OSPEEDR &= ~(3u << (pins[i] * 2u));
-        GPIOC->BSRR     =  (1u << (pins[i] + 16u));  /* idle low */
-    }
-
+    marker_pin_init(ISR_PIN_TIM1);   // PC5
+    marker_pin_init(ISR_PIN_ADC);    // PC4
+    marker_pin_init(ISR_PIN_EXTI);   // PC9
 }

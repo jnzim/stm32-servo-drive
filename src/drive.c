@@ -78,9 +78,9 @@ void drive_sm_run(void)
         {
             servo_on_req = 0;
 
-            // Reset before entering SERVO_ON. SysTick runs the position
-            // tick right after this returns, and that tick sets
-            // first_sample_ready and counts samples_consumed for the move.
+            // Reset before entering SERVO_ON. The next position tick in
+            // the TIM1 ISR sets first_sample_ready and counts
+            // samples_consumed for the move.
             loops_reset();
             first_sample_ready = 0;
             samples_consumed   = 0;
