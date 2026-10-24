@@ -110,15 +110,17 @@
 
 // Zero-cancellation PI, same gains on d and q (Ld ~= Lq). Plant from the
 // closed-loop current chirp (0.8A): R = 1.73 ohm, L = 1.05 mH, pole 262Hz.
-//     Kp = 2*pi*500*L = 3.30 V/A
-//     Ki = 2*pi*500*R = 5435 V/(A*s)      Ki/Kp = R/L, so L(s) -> wc/s
-// Measured closed loop: crossover 504Hz, PM 72.7deg, -3dB 767Hz.
+//     Kp = 2*pi*800*L = 5.28 V/A
+//     Ki = 2*pi*800*R = 8696 V/(A*s)      Ki/Kp = R/L, so L(s) -> wc/s
+// Measured (2026-10-23, locked rotor, chirp to 2kHz): crossover ~830Hz,
+// PM ~63deg, closed-loop -3dB ~1.8kHz. Was a 500Hz design (Kp 3.30,
+// Ki 5435): crossover 504Hz, PM 72.7deg, -3dB 767Hz.
 //
 // Fit the plant from the closed-loop chirp, not the open-loop one: the
 // open-loop chirp's current falls off at high frequency, where dead-time
 // error reads L high (1.20 vs 1.05 mH).
-#define CURRENT_LOOP_KP  3.30f      // V/A
-#define CURRENT_LOOP_KI  5435.0f    // V/(A*s)
+#define CURRENT_LOOP_KP  5.28f      // V/A
+#define CURRENT_LOOP_KI  8696.0f    // V/(A*s)
 
 // =============================================================================
 // Velocity loop
@@ -130,11 +132,16 @@
 // 23-26Hz. Ki = Kp * 2*pi*23.2 puts the PI zero on that pole. Ki was 6.34
 // (zero at 11.2Hz, from the 2026-09-19 fit), which left a 0.3-0.6dB sag in
 // the closed loop from 10 to 80Hz; at 13.13 it is flat within 0.2dB.
-// Measured (2026-10-22, OBS_K_ACC 11976): through the observer crossover
-// 229.7Hz, PM 72.6deg; through the encoder 120.9Hz, 64.9deg. Position loop
-// on top: 64.5Hz, PM 60.9deg, GM 11.0dB.
-#define VEL_KP        0.09000f   // A / (rad/s)
-#define VEL_KI        13.130f    // A / rad
+// Kp sets the closed-loop bandwidth to ~250Hz, about a third of the 750Hz
+// current loop it was designed against. With the current loop at 800Hz the
+// same Kp 0.090 measured 214Hz (less lag, less lift near crossover), so Kp
+// went to 0.107 to hold it.
+// Measured (2026-10-23, current loop 800Hz, OBS_K_ACC 11976): through the
+// observer crossover 272.9Hz, PM 74.9deg; through the encoder -3dB 262.6Hz.
+// Position loop on top: 63.5Hz, PM 64.5deg, GM 11.7dB. 10mm moves: 1.22um
+// peak, 0.27um rms.
+#define VEL_KP        0.10700f   // A / (rad/s)
+#define VEL_KI        15.600f    // A / rad      Kp * 2*pi*23.2
 
 // Velocity PI output clamp. The motor's 2.91A rating is continuous (RMS,
 // thermal), not a peak limit: on a 0.15 rad position chirp iq ran 0.73A RMS
