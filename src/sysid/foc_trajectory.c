@@ -80,7 +80,6 @@ static int32_t  g_move_accel_max = 0;
 static volatile int32_t traj_pos_cmd_counts   = 0;
 static volatile float   traj_vel_cmd_counts_s = 0.0f;
 static volatile int32_t traj_pos_meas_counts  = 0;
-static volatile uint32_t traj_pair_seq        = 0;   // bumped after each write
 
 // The outer loops share loop_div (loops.c), a 0..19 tick counter: velocity
 // on every 4th tick from 0, position on tick POS_LOOP_TICK. Position never
@@ -215,7 +214,6 @@ static void position_loop_tick(void)
     int32_t raw          = encoder_get_position() - traj_enc_offset;
     float   pos_meas_rad = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
     traj_pos_meas_counts = raw;
-    traj_pair_seq++;
 
     // Following-error trip -- see FOLLOWING_ERROR_LIMIT_MM (config.h).
     // drive_sm_run() takes the fault on the next 1ms tick: bridge off,
@@ -257,17 +255,9 @@ void foc_trajectory_telemetry_tick(void)
 
     if (drive_is_servo_on() && traj_stage == TRAJ_STAGE_RUN)
     {
-        // The position loop (TIM1 ISR) can interrupt these reads and write a
-        // new set halfway through. Re-read until no write landed in between;
-        // the next write is 1 ms away, so this repeats at most once.
-        uint32_t seq;
-        do
-        {
-            seq              = traj_pair_seq;
-            pos_cmd_counts   = traj_pos_cmd_counts;
-            vel_cmd_counts_s = traj_vel_cmd_counts_s;
-            pos_fbk          = traj_pos_meas_counts;
-        } while (seq != traj_pair_seq);
+        pos_cmd_counts   = traj_pos_cmd_counts;
+        vel_cmd_counts_s = traj_vel_cmd_counts_s;
+        pos_fbk          = traj_pos_meas_counts;
     }
 
     // Real telemetry, every tick, regardless of drive state -- named
