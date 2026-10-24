@@ -38,3 +38,6 @@ docs/*.pdf
 
 # ===== IDE =====
 .settings/
+
+# ===== Claude Code =====
+.claude/
