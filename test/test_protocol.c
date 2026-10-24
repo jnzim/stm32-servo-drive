@@ -5,21 +5,22 @@
 #include "test.h"
 #include "protocol.h"
 
-// The standard CRC-16/CCITT-FALSE check value, the one protocol.c quotes.
 static void crc16_check_value(void)
 {
+    DESCRIBE("Standard CRC-16/CCITT-FALSE check value: crc(\"123456789\") == 0x29B1.");
     const char *s = "123456789";
-    CHECK(crc16_calc((const uint8_t *)s, strlen(s)) == 0x29B1);
+    CHECK_CMP(crc16_calc((const uint8_t *)s, strlen(s)), ==, 0x29B1);
 }
 
 static void crc16_empty_is_init(void)
 {
-    CHECK(crc16_calc(NULL, 0) == 0xFFFF);
+    DESCRIBE("Empty input returns the init value 0xFFFF.");
+    CHECK_CMP(crc16_calc(NULL, 0), ==, 0xFFFF);
 }
 
-// A single flipped bit anywhere in a 30-byte frame changes the CRC.
 static void crc16_detects_bit_flip(void)
 {
+    DESCRIBE("Every one of the 240 single-bit flips in a 30-byte frame changes the CRC (missed == 0).");
     uint8_t frame[30];
     for (int i = 0; i < 30; i++) frame[i] = (uint8_t)(i * 37 + 11);
     uint16_t good = crc16_calc(frame, sizeof frame);
@@ -31,7 +32,7 @@ static void crc16_detects_bit_flip(void)
             if (crc16_calc(frame, sizeof frame) == good) missed++;
             frame[byte] ^= (uint8_t)(1u << bit);
         }
-    CHECK(missed == 0);
+    CHECK_CMP(missed, ==, 0);
 }
 
 void test_crc16(void)

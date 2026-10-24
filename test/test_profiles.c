@@ -80,59 +80,60 @@ static Run run_minjerk(int32_t start, int32_t target)
 
 static void trap_reaches_target(void)
 {
+    DESCRIBE("10 mm move (40960 counts) ends exactly on target, at zero velocity, never stepping backwards.");
     Run r = run_trap(0, MOVE_COUNTS);
-    CHECK(r.final_pos == MOVE_COUNTS);
+    CHECK_CMP(r.final_pos, ==, MOVE_COUNTS);
     CHECK_NEAR(r.final_vel, 0.0f, 0.0);
-    CHECK(r.backsteps == 0);
+    CHECK_CMP(r.backsteps, ==, 0);
 }
 
 static void trap_respects_limits(void)
 {
+    DESCRIBE("Peak velocity <= vel_max (40960 counts/s) and peak accel <= accel_max (1024000 counts/s^2), last tick excluded.");
     Run r = run_trap(0, MOVE_COUNTS);
-    CHECK(r.peak_vel <= VEL_MAX * 1.0001f);
-    CHECK(r.peak_accel <= ACCEL_MAX * 1.0001f);
+    CHECK_CMP(r.peak_vel, <=, VEL_MAX * 1.0001f);
+    CHECK_CMP(r.peak_accel, <=, ACCEL_MAX * 1.0001f);
 }
 
-// The last tick snaps the remaining 2 ticks' worth of speed to zero at once
-// (2048 counts/s = 0.5 mm/s here), so that one tick runs at 2x accel_max.
-// Documented behavior, not a limit violation over the move; this test pins it
-// so a change to the snap logic shows up.
 static void trap_final_snap(void)
 {
+    DESCRIBE("The last tick snaps the remaining 2 ticks of speed (2048 counts/s) to zero, so that one tick may reach 2x accel_max but no more. Pins the snap behavior.");
     Run r = run_trap(0, MOVE_COUNTS);
-    CHECK(r.last_accel <= 2.0f * ACCEL_MAX * 1.0001f);
+    CHECK_CMP(r.last_accel, <=, 2.0f * ACCEL_MAX * 1.0001f);
 }
 
-// 10 mm at 10 mm/s with 40 ms ramps: 1.04 s, the length of the moves on the slides.
 static void trap_duration(void)
 {
+    DESCRIBE("10 mm at 10 mm/s with 40 ms ramps takes 1.04 s = 1040 ticks at 1 kHz (+/-2).");
     Run r = run_trap(0, MOVE_COUNTS);
-    CHECK(abs(r.ticks - 1040) <= 2);
+    CHECK_CMP(abs(r.ticks - 1040), <=, 2);
 }
 
 static void trap_reverse(void)
 {
+    DESCRIBE("Reverse move 40960 -> 0 ends on target with no step in the wrong direction.");
     Run r = run_trap(MOVE_COUNTS, 0);
-    CHECK(r.final_pos == 0);
-    CHECK(r.backsteps == 0);
+    CHECK_CMP(r.final_pos, ==, 0);
+    CHECK_CMP(r.backsteps, ==, 0);
 }
 
-// Too short to reach vel_max: triangular, peak below the limit.
 static void trap_short_move_is_triangular(void)
 {
+    DESCRIBE("A 400-count move is too short to reach vel_max: triangular profile, ends on target, peak below vel_max.");
     Run r = run_trap(0, 400);
-    CHECK(r.final_pos == 400);
-    CHECK(r.peak_vel < VEL_MAX);
+    CHECK_CMP(r.final_pos, ==, 400);
+    CHECK_CMP(r.peak_vel, <, VEL_MAX);
 }
 
 static void trap_zero_length(void)
 {
+    DESCRIBE("Start == target: generator is inactive immediately and a step returns the target position at zero velocity.");
     TrapGen g;
     trap_gen_start(&g, 123, 123, VEL_MAX, ACCEL_MAX);
     CHECK(!trap_gen_active(&g));
     int32_t pos = 0; float vel = 1.0f;
     trap_gen_step(&g, DT, &pos, &vel);
-    CHECK(pos == 123);
+    CHECK_CMP(pos, ==, 123);
     CHECK_NEAR(vel, 0.0f, 0.0);
 }
 
@@ -140,48 +141,49 @@ static void trap_zero_length(void)
 
 static void minjerk_reaches_target(void)
 {
+    DESCRIBE("10 mm move ends exactly on target, at zero velocity, never stepping backwards.");
     Run r = run_minjerk(0, MOVE_COUNTS);
-    CHECK(r.final_pos == MOVE_COUNTS);
+    CHECK_CMP(r.final_pos, ==, MOVE_COUNTS);
     CHECK_NEAR(r.final_vel, 0.0f, 0.0);
-    CHECK(r.backsteps == 0);
+    CHECK_CMP(r.backsteps, ==, 0);
 }
 
 static void minjerk_respects_limits(void)
 {
+    DESCRIBE("Peak velocity <= vel_max; peak accel <= accel_max with 1% allowance for the finite-difference estimate.");
     Run r = run_minjerk(0, MOVE_COUNTS);
-    CHECK(r.peak_vel <= VEL_MAX * 1.0001f);
-    CHECK(r.peak_accel <= ACCEL_MAX * 1.01f);   // finite-difference estimate of a smooth peak
+    CHECK_CMP(r.peak_vel, <=, VEL_MAX * 1.0001f);
+    CHECK_CMP(r.peak_accel, <=, ACCEL_MAX * 1.01f);   // finite-difference estimate of a smooth peak
 }
 
-// Velocity-limited here: T = 1.875 * D / vel_max = 1.875 s.
 static void minjerk_duration(void)
 {
+    DESCRIBE("Velocity-limited: T = 1.875 * D / vel_max = 1.875 s, and the run takes 1875 ticks (+/-1).");
     MinJerkGen g;
     minjerk_gen_start(&g, 0, MOVE_COUNTS, VEL_MAX, ACCEL_MAX);
     CHECK_NEAR(g.duration, 1.875f, 1e-5);
     Run r = run_minjerk(0, MOVE_COUNTS);
-    CHECK(abs(r.ticks - 1875) <= 1);
+    CHECK_CMP(abs(r.ticks - 1875), <=, 1);
 }
 
-// Peak velocity sits at the midpoint, half way through the move.
 static void minjerk_symmetric(void)
 {
+    DESCRIBE("At T/2 the position is at the midpoint (within one tick of travel) and velocity is at its peak, vel_max.");
     MinJerkGen g;
     minjerk_gen_start(&g, 0, MOVE_COUNTS, VEL_MAX, ACCEL_MAX);
     int32_t pos = 0; float vel = 0.0f;
     int half = (int)(g.duration / DT / 2.0f);      // T/2 = 937.5 ticks: sample at 937
     for (int i = 0; i < half; i++) minjerk_gen_step(&g, DT, &pos, &vel);
-    CHECK(abs(pos - MOVE_COUNTS / 2) <= VEL_MAX * DT);   // within one tick of travel of the midpoint
+    CHECK_CMP(abs(pos - MOVE_COUNTS / 2), <=, VEL_MAX * DT);   // within one tick of travel of the midpoint
     CHECK_NEAR(vel, VEL_MAX, VEL_MAX * 1e-3);
 }
 
-// A long move at large counts: no step back in the last ticks (the reason
-// minjerk_gen_step evaluates the polynomial in double).
 static void minjerk_long_move_monotonic(void)
 {
+    DESCRIBE("80 mm move starting at 400000 counts: ends on target, no backstep in the last ticks (why the polynomial is evaluated in double).");
     Run r = run_minjerk(400000, 400000 + 8 * MOVE_COUNTS);
-    CHECK(r.final_pos == 400000 + 8 * MOVE_COUNTS);
-    CHECK(r.backsteps == 0);
+    CHECK_CMP(r.final_pos, ==, 400000 + 8 * MOVE_COUNTS);
+    CHECK_CMP(r.backsteps, ==, 0);
 }
 
 void test_trap_gen(void)
