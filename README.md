@@ -13,15 +13,15 @@ Every loop is designed from frequency response data measured on the hardware.
 | Loop     | Rate   | Crossover | Phase margin |
 |----------|--------|-----------|--------------|
 | Current  | 20 kHz | 830 Hz    | 64°          |
-| Velocity | 5 kHz  | 239 Hz    | 81°          |
-| Position | 1 kHz  | 64 Hz     | 61°          |
+| Velocity | 5 kHz  | 255 Hz    | 80°          |
+| Position | 1 kHz  | 63.5 Hz   | 61.6°        |
 
-Closed-loop bandwidth: current about 1.8 kHz, velocity 220 Hz (through the encoder),
+Closed-loop bandwidth: current about 1.8 kHz, velocity 214 Hz (through the encoder),
 position 125 Hz. Velocity crossover is measured through the observer, the signal the loop
 feeds back.
 
 A 10 mm trapezoidal move at 10 mm/s tracks to ±0.73 µm (3 encoder counts) at cruise and
-1.7 µm peak on the ramps, with friction and velocity feedforward.
+1.2–1.5 µm peak on the ramps, with friction and velocity feedforward.
 
 ## Hardware
 

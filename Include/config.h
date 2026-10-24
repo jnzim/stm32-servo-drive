@@ -134,13 +134,14 @@
 // the closed loop from 10 to 80Hz; at 13.13 it is flat within 0.2dB.
 // Designed to crossover and margin: crossover ~250Hz (the current loop at
 // ~830Hz is >3x above, the 800Hz observer ~3x above), PM >= 60deg. Kp read
-// off the measured loop through the observer: |Gc*Gp| = 1 at 250Hz.
-// Measured (2026-10-23, current loop 800Hz, OBS_K_ACC 11976): through the
-// observer crossover 239.5Hz, PM 81.3deg; through the encoder -3dB 219.8Hz.
-// Position loop on top: 64.0Hz, PM 61.0deg, GM 12.0dB. 10mm moves: 1.71um
-// peak, 0.29um rms.
-#define VEL_KP        0.08900f   // A / (rad/s)
-#define VEL_KI        12.970f    // A / rad      Kp * 2*pi*23.2
+// off the measured loop through the observer: |Gc*Gp| = 1 at 250Hz (0.089
+// from the 0.107 run measured 239.5Hz; re-read from that run gave 0.091).
+// Measured (2026-10-24, current loop 800Hz, OBS_K_ACC 11976): through the
+// observer crossover 254.5Hz, PM 79.6deg; through the encoder -3dB 213.5Hz.
+// Position loop on top: 63.5Hz, PM 61.6deg, GM 12.2dB. 10mm moves: 1.22 and
+// 1.46um peak, 0.29um rms.
+#define VEL_KP        0.09100f   // A / (rad/s)
+#define VEL_KI        13.265f    // A / rad      Kp * 2*pi*23.2
 
 // Velocity PI output clamp. The motor's 2.91A rating is continuous (RMS,
 // thermal), not a peak limit: on a 0.15 rad position chirp iq ran 0.73A RMS
