@@ -13,7 +13,7 @@ Every loop is designed from frequency response data measured on the hardware.
 | Loop     | Rate   | Crossover | Phase margin |
 |----------|--------|-----------|--------------|
 | Current  | 20 kHz | 830 Hz    | 64°          |
-| Velocity | 5 kHz  | 255 Hz    | 80°          |
+| Velocity | 5 kHz  | 254 Hz    | 80°          |
 | Position | 1 kHz  | 63.5 Hz   | 61.6°        |
 
 Closed-loop bandwidth: current about 1.8 kHz, velocity 214 Hz (through the encoder),
