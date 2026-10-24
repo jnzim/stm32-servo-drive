@@ -2,7 +2,7 @@
 
 [![Build Firmware](https://github.com/jnzim/stm32-servo-drive/actions/workflows/build.yml/badge.svg?branch=jz-dev)](https://github.com/jnzim/stm32-servo-drive/actions/workflows/build.yml)
 
-Bare metal field oriented control for a single servo axis: an STM32F411 driving a TI DRV8353RS
+Bare metal field oriented control for a single servo axis: an STM32F446 driving a TI DRV8353RS
 gate driver and a Kollmorgen AKM11E motor on a ball screw stage. No vendor motor control SDK.
 Every loop is designed from frequency response data measured on the hardware.
 
@@ -25,7 +25,7 @@ A 10 mm trapezoidal move at 10 mm/s tracks to ±0.73 µm (3 encoder counts) at c
 
 ## Hardware
 
-- STM32F411RE Nucleo
+- STM32F446RE Nucleo
 - TI DRV8353RS gate driver, low side shunt current sensing
 - Kollmorgen AKM11E with an incremental encoder (8192 counts/rev), driving a 2 mm lead ball screw stage
 - Raspberry Pi 5 over SPI: sends move commands, logs telemetry, runs the analysis
