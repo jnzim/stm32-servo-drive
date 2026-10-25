@@ -216,9 +216,9 @@ static void position_loop_tick(void)
 
     float   pos_cmd_rad  = (float)pos_cmd_counts / COUNTS_PER_RAD;
     int32_t raw          = encoder_get_position() - traj_enc_offset;
-    float   pos_meas_rad = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
+    float   pos_meas_rad = (float)raw / COUNTS_PER_RAD;
     traj_pos_meas_counts = raw;
-    traj_pair_seq++;
+    traj_pair_seq++;   // new cmd/meas pair written: telemetry re-reads if this changes mid-read
 
     // Following-error trip -- see FOLLOWING_ERROR_LIMIT_MM (config.h).
     // drive_sm_run() takes the fault on the next 1ms tick: bridge off,
