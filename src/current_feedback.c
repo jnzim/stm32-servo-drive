@@ -360,6 +360,7 @@ void current_feedback_get_phase_amps(float *ia, float *ib, float *ic)
 
 // =============================================================================
 // current_feedback_get_dq
+// Clarke (amplitude-invariant, ic = -ia - ib) then Park by theta: phase currents -> i_d, i_q.
 // =============================================================================
 
 void current_feedback_get_dq(float theta, float *i_d, float *i_q)
