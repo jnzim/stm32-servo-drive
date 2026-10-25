@@ -35,6 +35,13 @@ volatile uint16_t g_drv_fault_status_1 = 0;
 volatile uint16_t g_drv_vgs_status_2   = 0;
 volatile bool     g_drv_nfault_pin_ok  = false;
 
+// =============================================================================
+// TIM1_UP_TIM10_IRQHandler — 20 kHz, top priority. The control loop: TIM1's
+// update event fires once per PWM period at the counter valley (the vector is
+// shared with TIM10 on the F4). Uses the current sample the ADC took at the
+// peak before it, runs the current loop every tick, velocity every 4th and
+// position every 20th, and writes duties that load at the next valley.
+// =============================================================================
 void TIM1_UP_TIM10_IRQHandler(void)
 {
     TIM1->SR = ~TIM_SR_UIF;
