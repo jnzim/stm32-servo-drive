@@ -18,6 +18,7 @@ add_executable(fw.elf
     src/loops.c
     src/clock.c
     src/pwm.c
+    src/svpwm.c
     src/drv8353.c
     src/system_stm32f4xx.c
     src/current_feedback.c

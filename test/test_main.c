@@ -11,10 +11,11 @@ void test_pi(void);
 void test_trap_gen(void);
 void test_minjerk_gen(void);
 void test_crc16(void);
+void test_svpwm(void);
 
 int main(void)
 {
-    printf("Host unit tests: src/control.c, trap_gen.c, minjerk_gen.c, protocol.c\n");
+    printf("Host unit tests: src/control.c, trap_gen.c, minjerk_gen.c, protocol.c, svpwm.c\n");
 
     printf("\n==== PI / P controllers (control.c) ====\n");
     test_pi();
@@ -24,6 +25,8 @@ int main(void)
     test_minjerk_gen();
     printf("\n==== CRC-16/CCITT-FALSE (protocol.c) ====\n");
     test_crc16();
+    printf("\n==== SVPWM min-max injection (svpwm.c, not yet used by pwm.c) ====\n");
+    test_svpwm();
 
     printf("\n==== Summary ====\n");
     printf("tests:  %d passed, %d failed\n", g_tests_passed, g_tests_failed);
