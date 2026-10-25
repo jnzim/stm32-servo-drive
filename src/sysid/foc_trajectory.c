@@ -85,7 +85,9 @@ static volatile uint32_t traj_pair_seq        = 0;   // bumped after each write
 // The outer loops share loop_div (loops.c), a 0..19 tick counter: velocity
 // on every 4th tick from 0, position on tick POS_LOOP_TICK. Position never
 // lands on a velocity tick, so one ISR call runs at most one outer loop.
-#define POS_LOOP_TICK  2u
+#define LOOP_DIV_TICKS  20u   // 20 kHz / 20 = 1 kHz position loop
+#define VEL_LOOP_TICKS   4u   // 20 kHz / 4  = 5 kHz velocity loop
+#define POS_LOOP_TICK    2u
 
 // =============================================================================
 // Applied voltage and measured iq — written each 20 kHz tick, read by the
@@ -129,7 +131,8 @@ void foc_trajectory_step(void)
             if (!drive_is_servo_on())
                 return;
 
-            if (++loop_div >= 20u)
+            loop_div++;
+            if (loop_div >= LOOP_DIV_TICKS)
                 loop_div = 0u;
 
             // ── Position loop @ 1 kHz ────────────────────────────────────────
@@ -160,7 +163,7 @@ void foc_trajectory_step(void)
 #endif
 
             // ── Velocity loop @ 5 kHz ────────────────────────────────────────
-            if ((loop_div & 3u) == 0u)
+            if (loop_div % VEL_LOOP_TICKS == 0u)
             {
                 float vel_fbk_rad = velocity_feedback_rad(encoder_get_velocity());
                 iq_cmd = velocity_loop_step(vel_cmd_rad_sec, vel_fbk_rad, DT_VELOCITY);
