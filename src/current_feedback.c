@@ -103,7 +103,7 @@ static volatile uint32_t current_missed_count  = 0u;
 
 void ADC_IRQHandler(void)
 {
-    if (ADC1->SR & ADC_SR_JEOC_BIT)
+    if (ADC1->SR & ADC_SR_JEOC_BIT)   // shared ADC vector: act only on ADC1 injected-conversion complete
     {
         ISR_TIME_BEGIN(ISR_T_ADC, ISR_PIN_ADC);   /* PC4 high — sample point */
 
