@@ -176,7 +176,7 @@ float encoder_elec_angle(int32_t offset)
     int32_t raw = encoder_get_position() - offset;
 
     float theta_mech = (float)raw * (FOC_TWO_PI / ENCODER_CPR);
-    float theta_elec = ENC_DIR * theta_mech * (float)MOTOR_POLE_PAIRS;
+    float theta_elec = ENC_DIR * theta_mech * (float)MOTOR_POLE_PAIRS;   // 3 pole pairs: 360° electrical = 120° mechanical (~2731 counts)
 
     theta_elec = fmodf(theta_elec, FOC_TWO_PI);
     if (theta_elec < 0.0f)
