@@ -161,26 +161,33 @@ static void spi2_rearm(void)
 {
     DMA1_Stream3->CR &= ~DMA_SxCR_EN;   // stop RX DMA: SPI2->DR -> RX buffer (MoveCmd from the Pi)
     DMA1_Stream4->CR &= ~DMA_SxCR_EN;   // stop TX DMA: TX buffer -> SPI2->DR (telemetry to the Pi)
+    // Wait till DMA disabled: the streams can't be reprogrammed while EN is 1.
+    // Timeout so the ISR can't hang (normally exits on the first pass).
     for (uint32_t i = 0u;
          ((DMA1_Stream3->CR | DMA1_Stream4->CR) & DMA_SxCR_EN) && i < 1000u;
          i++) { }
 
+    // Pulse SPI2's reset: discards any partial byte in the shift register/FIFO,
+    // so the next frame starts at byte 0. Also wipes the config (rewritten below).
     RCC->APB1RSTR |=  RCC_APB1RSTR_SPI2RST;
     RCC->APB1RSTR &= ~RCC_APB1RSTR_SPI2RST;
 
-    spi2_dma_clear_flags();
+    spi2_dma_clear_flags();   // clear both streams' done/error flags before re-enabling
 
+    // Load the latest published telemetry frame into the TX buffer; the barrier
+    // makes sure the copy has landed before the DMA can read it.
     memcpy(spi2_tx_buf, tx_stage[tx_stage_pub], SPI2_TRANSACTION_BYTES);
     __DMB();
 
+    // Re-arm both streams for one 32-byte frame.
     DMA1_Stream3->NDTR = SPI2_TRANSACTION_BYTES;
     DMA1_Stream4->NDTR = SPI2_TRANSACTION_BYTES;
     DMA1_Stream3->CR  |= DMA_SxCR_EN;
     DMA1_Stream4->CR  |= DMA_SxCR_EN;
 
-    SPI2->CR1  = SPI_CR1_CPHA;
-    SPI2->CR2  = SPI_CR2_RXDMAEN | SPI_CR2_TXDMAEN;
-    SPI2->CR1 |= SPI_CR1_SPE;
+    SPI2->CR1  = SPI_CR1_CPHA;                        // slave, mode 1 (CPOL 0, CPHA 1), 8-bit
+    SPI2->CR2  = SPI_CR2_RXDMAEN | SPI_CR2_TXDMAEN;   // SPI2 requests DMA for RX and TX
+    SPI2->CR1 |= SPI_CR1_SPE;                         // enable: ready for the Pi's next CS low
 
     /* CS already low: the Pi started the next transaction before the link
      * was ready, so that frame is lost. */
