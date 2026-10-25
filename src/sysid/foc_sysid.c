@@ -10,6 +10,7 @@
 //   6  CL_VEL_CHIRP         deployed velocity PI, vel_cmd chirp
 //  14  CL_VEL_PLANT_CHIRP   P-only velocity loop, vel_cmd chirp -> velocity plant
 //   8  CL_POS_CHIRP         full cascade, pos_cmd chirp       -> position-loop margin
+//   7  POSITION_STEP        same cascade, pos_cmd 0 <-> 0.1 rad steps -> rise time
 //  12  FRICTION_SWEEP       constant-velocity holds           -> Coulomb + viscous
 //
 // Only the selected test's run_* function is compiled.
@@ -429,10 +430,12 @@ static void run_cl_vel_chirp(ClVelController ctrl)
 #endif
 
 
-#if SYSID_TEST == SYSID_TEST_CL_POS_CHIRP
+#if SYSID_TEST == SYSID_TEST_CL_POS_CHIRP || SYSID_TEST == SYSID_TEST_POSITION_STEP
 // =============================================================================
 // run_cl_pos_chirp — test 8. Chirps pos_cmd with the full cascade closed:
 // position P (1 kHz) -> velocity PI (5 kHz) -> current PI (20 kHz).
+// Test 7 runs the same cascade with pos_cmd stepping instead (config.h,
+// POS_STEP_*).
 //
 // Telemetry: sysid_f = pos_cmd [mrad], last = pos_meas [mrad],
 // enc_hi = vel_cmd [mrad/s / VEL_CMD_TELEM_DIV], enc_lo = vel_meas [counts/s / VEL_TELEM_DIV].
@@ -444,8 +447,12 @@ static uint32_t pos_loop_tick          = 0;
 static float    pos_cmd_rad            = 0.0f;
 static float    pos_meas_rad           = 0.0f;
 static uint32_t pos_chirp_settle_tick  = 0;
+#if SYSID_TEST == SYSID_TEST_POSITION_STEP
+static uint32_t pos_step_tick          = 0;
+#else
 static float    cl_pos_chirp_t         = 0.0f;
 static float    cl_pos_chirp_angle_rad = 0.0f;
+#endif
 
 static void run_cl_pos_chirp(void)
 {
@@ -473,6 +480,12 @@ static void run_cl_pos_chirp(void)
         }
         else
         {
+#if SYSID_TEST == SYSID_TEST_POSITION_STEP
+            uint32_t segment = pos_step_tick / POS_STEP_HOLD_TICKS;
+            pos_cmd_rad = (segment % 2u == 0u) ? POS_STEP_AMPLITUDE : 0.0f;
+            ++pos_step_tick;
+            if (segment >= POS_STEP_SEGMENTS)
+#else
             sysid_f = CL_POS_CHIRP_F_START *
                       powf(CL_POS_CHIRP_F_END / CL_POS_CHIRP_F_START,
                            cl_pos_chirp_t / CL_POS_CHIRP_DURATION);
@@ -486,6 +499,7 @@ static void run_cl_pos_chirp(void)
             cl_pos_chirp_t += DT_POSITION;
 
             if (cl_pos_chirp_t >= CL_POS_CHIRP_DURATION)
+#endif
             {
                 pos_cmd_rad     = 0.0f;
                 vel_cmd_rad_sec = 0.0f;
@@ -574,7 +588,7 @@ void foc_sysid_step(void)
             run_cl_vel_chirp(CL_VEL_CTRL_DEPLOYED);
         #elif SYSID_TEST == SYSID_TEST_CL_VEL_PLANT_CHIRP
             run_cl_vel_chirp(CL_VEL_CTRL_PLANT_ID);
-        #elif SYSID_TEST == SYSID_TEST_CL_POS_CHIRP
+        #elif SYSID_TEST == SYSID_TEST_CL_POS_CHIRP || SYSID_TEST == SYSID_TEST_POSITION_STEP
             run_cl_pos_chirp();
         #elif SYSID_TEST == SYSID_TEST_FRICTION_SWEEP
             run_friction_sweep();
@@ -625,6 +639,13 @@ void foc_sysid_step(void)
 #elif SYSID_TEST == SYSID_TEST_CL_POS_CHIRP
     int16_t sysid_f_slot = (int16_t)(pos_cmd_rad * 1000.0f);
     int16_t last_slot    = (int16_t)(pos_meas_rad * 1000.0f);
+    int16_t enc_hi_slot  = (int16_t)(vel_cmd_rad_sec * 1000.0f / VEL_CMD_TELEM_DIV);
+    int16_t enc_lo_slot  = (int16_t)(vel_meas_counts / VEL_TELEM_DIV);
+#elif SYSID_TEST == SYSID_TEST_POSITION_STEP
+    // last = encoder position read this tick [mrad], not pos_meas_rad, which
+    // only updates at 1 kHz: too coarse for a ~2-3 ms rise.
+    int16_t sysid_f_slot = (int16_t)(pos_cmd_rad * 1000.0f);
+    int16_t last_slot    = (int16_t)((float)(enc_pos - sysid_enc_offset) * (FOC_TWO_PI / ENCODER_CPR) * 1000.0f);
     int16_t enc_hi_slot  = (int16_t)(vel_cmd_rad_sec * 1000.0f / VEL_CMD_TELEM_DIV);
     int16_t enc_lo_slot  = (int16_t)(vel_meas_counts / VEL_TELEM_DIV);
 #elif SYSID_TEST == SYSID_TEST_CL_CURRENT_CHIRP

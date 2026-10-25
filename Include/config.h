@@ -32,6 +32,7 @@
 #define SYSID_TEST_CURRENT_LOOP_CHIRP       0
 #define SYSID_TEST_CL_CURRENT_CHIRP         3
 #define SYSID_TEST_CL_VEL_CHIRP             6
+#define SYSID_TEST_POSITION_STEP            7
 #define SYSID_TEST_CL_POS_CHIRP             8
 #define SYSID_TEST_FRICTION_SWEEP           12
 #define SYSID_TEST_CL_VEL_PLANT_CHIRP       14
@@ -293,3 +294,11 @@
 // near crossover. A saturated loop measures as a describing function, not a
 // transfer function, and its PM depends on amplitude.
 #define CL_POS_CHIRP_AMPLITUDE  0.10f   // rad
+
+// Position step (test 7): the test 8 cascade with pos_cmd stepping between 0
+// and POS_STEP_AMPLITUDE instead of chirping. Same amplitude as the chirp, so
+// the step and the Bode are the same linear loop (P output 38 rad/s, under
+// POSITION_VEL_LIMIT).
+#define POS_STEP_AMPLITUDE      CL_POS_CHIRP_AMPLITUDE   // rad
+#define POS_STEP_HOLD_TICKS     300u    // 0.3 s per level @ 1 kHz
+#define POS_STEP_SEGMENTS       10u     // +A, 0, +A, 0, ... : 5 up and 5 down steps
