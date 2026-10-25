@@ -138,7 +138,7 @@ void foc_trajectory_step(void)
             // ── Position loop @ 1 kHz ────────────────────────────────────────
             // Runs ahead of the gates below: it is what sets first_sample_ready.
             if (loop_div == POS_LOOP_TICK)
-                position_loop_tick();
+                position_loop_tick();   // tick 2 of 20: never shares a tick with the velocity loop (0, 4, 8, ...)
 
             if (!first_sample_ready)
                 return;
