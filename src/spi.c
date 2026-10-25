@@ -159,8 +159,8 @@ void spi_sysid_update_latest(int16_t ia_mA,
 
 static void spi2_rearm(void)
 {
-    DMA1_Stream3->CR &= ~DMA_SxCR_EN;
-    DMA1_Stream4->CR &= ~DMA_SxCR_EN;
+    DMA1_Stream3->CR &= ~DMA_SxCR_EN;   // stop RX DMA: SPI2->DR -> RX buffer (MoveCmd from the Pi)
+    DMA1_Stream4->CR &= ~DMA_SxCR_EN;   // stop TX DMA: TX buffer -> SPI2->DR (telemetry to the Pi)
     for (uint32_t i = 0u;
          ((DMA1_Stream3->CR | DMA1_Stream4->CR) & DMA_SxCR_EN) && i < 1000u;
          i++) { }
