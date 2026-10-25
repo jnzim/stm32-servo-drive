@@ -214,6 +214,7 @@ static void position_loop_tick(void)
     traj_pos_cmd_counts   = pos_cmd_counts;
     traj_vel_cmd_counts_s = vel_cmd_counts_s;
 
+    // Command and measured position, in rad for the position P loop; the counts go to telemetry.
     float   pos_cmd_rad  = (float)pos_cmd_counts / COUNTS_PER_RAD;
     int32_t raw          = encoder_get_position() - traj_enc_offset;
     float   pos_meas_rad = (float)raw / COUNTS_PER_RAD;
