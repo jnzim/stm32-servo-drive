@@ -361,18 +361,18 @@ static void spi2_rx_parse(const uint8_t *frame)
  */
 void EXTI15_10_IRQHandler(void)
 {
-    if (!(EXTI->PR & (1u << PIN_RPI_NSS))) return;
+    if (!(EXTI->PR & (1u << PIN_RPI_NSS))) return;   // shared EXTI15_10 vector: act only on the Pi's CS (PB12) rising edge
 
     ISR_TIME_BEGIN(ISR_T_EXTI, ISR_PIN_EXTI);
 
-    EXTI->PR = (1u << PIN_RPI_NSS);
+    EXTI->PR = (1u << PIN_RPI_NSS);   // clear the pending flag (write 1 to clear)
     cnt_cs++;
 
-    if (DMA1_Stream3->NDTR == 0u)
+    if (DMA1_Stream3->NDTR == 0u)   // RX DMA got all 32 bytes; anything less is a torn frame
     {
         cnt_telem++;
 #if RUN_MODE != RUN_MODE_SYSID
-        spi2_rx_parse((const uint8_t *)spi2_rx_buf);
+        spi2_rx_parse((const uint8_t *)spi2_rx_buf);   // parse the received frame (MoveCmd)
 #endif
     }
     else

@@ -103,6 +103,8 @@ static void position_loop_tick(void);
 
 // =============================================================================
 // foc_trajectory_step — called from TIM1_UP_TIM10_IRQHandler at 20 kHz
+// ALIGN: hold the rotor at electrical angle 0 and capture the encoder offset.
+// RUN: position loop (1 kHz), velocity loop (5 kHz) and current loop (20 kHz).
 // =============================================================================
 
 void foc_trajectory_step(void)
@@ -138,7 +140,11 @@ void foc_trajectory_step(void)
             // ── Position loop @ 1 kHz ────────────────────────────────────────
             // Runs ahead of the gates below: it is what sets first_sample_ready.
             if (loop_div == POS_LOOP_TICK)
-                position_loop_tick();   // next profile point, read encoder, following-error trip, vel_cmd = vel FF + Kp*(pos error)
+            {
+                // position loop: next profile point, read encoder, following-error trip,
+                // vel_cmd = vel FF + Kp*(pos error)
+                position_loop_tick();
+            }
 
             if (!first_sample_ready)
                 return;
@@ -236,8 +242,7 @@ static void position_loop_tick(void)
     // cruise following error is v/Kp. The clamp (p_step has none of its
     // own) applies to the total: at 10 mm/s the feedforward alone is
     // 31.4 of the 80 rad/s POSITION_VEL_LIMIT.
-    float v = (vel_cmd_counts_s / COUNTS_PER_RAD)
-            + p_step(&position_loop, pos_cmd_rad - pos_meas_rad);
+    float v = (vel_cmd_counts_s / COUNTS_PER_RAD) + p_step(&position_loop, pos_cmd_rad - pos_meas_rad);
     if (v >  POSITION_VEL_LIMIT) v =  POSITION_VEL_LIMIT;
     if (v < -POSITION_VEL_LIMIT) v = -POSITION_VEL_LIMIT;
     vel_cmd_rad_sec = v;
